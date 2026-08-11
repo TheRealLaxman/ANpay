@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
 @inject AuthState Auth
+@inject ApiService Api
 @inject NavigationManager Nav
 
 @if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
@@ -17,22 +18,105 @@
             <p>Welcome, @Auth.GetDisplayName()</p>
         </div>
         <div class="header-right">
+            <span class="badge badge-info">Branch Admin</span>
             <button class="btn btn-outline" @onclick="Logout">Logout</button>
         </div>
     </div>
 
-    <div class="card">
-        <h3 style="font-size: 16px; margin-bottom: 16px;">Branch Management</h3>
-        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
-    </div>
+    @if (loading)
+    {
+        <div class="card"><p>Loading dashboard...</p></div>
+    }
+    else if (branchStats != null)
+    {
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="stat-card">
+                <div class="stat-label">Employees</div>
+                <div class="stat-value">@branchStats.EmployeeCount</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Today Deposits</div>
+                <div class="stat-value">₦@branchStats.TodayDeposits.ToString("N2")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Today Withdrawals</div>
+                <div class="stat-value">₦@branchStats.TodayWithdrawals.ToString("N2")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Today Transfers</div>
+                <div class="stat-value">@branchStats.TodayTransfers</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Cash Balance</div>
+                <div class="stat-value">₦@branchStats.CashBalance.ToString("N2")</div>
+            </div>
+            <div class="stat-card @(branchStats.PendingApprovals > 0 ? "stat-warning" : "")">
+                <div class="stat-label">Pending Approvals</div>
+                <div class="stat-value">@branchStats.PendingApprovals</div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div class="card">
+                <h3 style="font-size: 16px; margin-bottom: 16px;">Quick Actions</h3>
+                <div class="quick-actions">
+                    <a href="/branch/officials" class="btn btn-primary">Manage Employees</a>
+                    <a href="/branch/reports" class="btn btn-primary">View Reports</a>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 style="font-size: 16px; margin-bottom: 16px;">Branch Info</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">Branch</span>
+                        <span>@branchStats.BranchName</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">Status</span>
+                        <span class="badge badge-success">@branchStats.Status</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="card">
+            <p style="color: var(--color-error);">@error</p>
+        </div>
+    }
 </div>
 
 @code {
+    private BranchDashboardDto? branchStats;
+    private bool loading = true;
+    private string error = string.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadDashboard();
+    }
+
+    private async Task LoadDashboard()
+    {
+        loading = true;
+        try
+        {
+            branchStats = await Api.GetBranchDashboardAsync(Guid.Empty);
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to load dashboard: {ex.Message}";
+        }
+        loading = false;
     }
 
     private async Task Logout()

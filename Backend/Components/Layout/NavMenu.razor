@@ -23,6 +23,15 @@
             <a href="/admin/transactions" class="nav-item @(Nav.Uri.Contains("/admin/transactions") ? "active" : "")">
                 Transactions
             </a>
+            <a href="/admin/approvals" class="nav-item @(Nav.Uri.Contains("/admin/approvals") ? "active" : "")">
+                Approvals
+            </a>
+            <a href="/admin/kyc" class="nav-item @(Nav.Uri.Contains("/admin/kyc") ? "active" : "")">
+                KYC
+            </a>
+            <a href="/admin/settings" class="nav-item @(Nav.Uri.Contains("/admin/settings") ? "active" : "")">
+                Settings
+            </a>
         }
         else if (Auth.IsBranchAdmin())
         {
@@ -59,6 +68,10 @@
             <a href="/" class="nav-item">
                 Home
             </a>
+            <div style="padding: 8px 16px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 14px;">@Auth.GetDisplayName()</span>
+                <button class="btn btn-sm btn-outline" @onclick="Logout" style="margin-left: auto;">Logout</button>
+            </div>
         </div>
     </nav>
 }
@@ -86,5 +99,11 @@ else
     public void Dispose()
     {
         Auth.OnChange -= StateHasChanged;
+    }
+
+    private async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login");
     }
 }

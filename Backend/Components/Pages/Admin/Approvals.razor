@@ -1,0 +1,111 @@
+@page "/admin/approvals"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject ApiService Api
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Approval Management</h1>
+            <p>Review and approve pending requests</p>
+        </div>
+        <div class="header-right">
+            <a href="/admin/dashboard" class="btn btn-outline">Back</a>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="card"><p>Loading approvals...</p></div>
+    }
+    else
+    {
+        <div class="card">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Type</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Requested By</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Amount</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Description</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Date</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var req in approvals)
+                    {
+                        <tr style="border-bottom: 1px solid var(--border-color);">
+                            <td style="padding: 12px 8px;">@req.Type</td>
+                            <td style="padding: 12px 8px;">@req.RequestedByName</td>
+                            <td style="padding: 12px 8px; font-weight: 500;">₦@req.Amount.ToString("N2")</td>
+                            <td style="padding: 12px 8px;">@req.Description</td>
+                            <td style="padding: 12px 8px; color: var(--text-secondary);">@req.CreatedAt.ToString("MMM dd, HH:mm")</td>
+                            <td style="padding: 12px 8px;">
+                                <button class="btn btn-sm btn-success" @onclick="() => Approve(req.Id)">Approve</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => Reject(req.Id)">Reject</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (!approvals.Any())
+            {
+                <p style="text-align: center; padding: 24px; color: var(--text-secondary);">No pending approvals</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<ApprovalDto> approvals = new();
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadApprovals();
+    }
+
+    private async Task LoadApprovals()
+    {
+        loading = true;
+        try { approvals = await Api.GetPendingApprovalsAsync(); }
+        catch { }
+        loading = false;
+    }
+
+    private async Task Approve(Guid id)
+    {
+        try
+        {
+            await Api.ApproveRequestAsync(id, "Approved by admin");
+            await LoadApprovals();
+        }
+        catch { }
+    }
+
+    private async Task Reject(Guid id)
+    {
+        try
+        {
+            await Api.RejectRequestAsync(id, "Rejected by admin");
+            await LoadApprovals();
+        }
+        catch { }
+    }
+}

@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
 @inject AuthState Auth
+@inject ApiService Api
 @inject NavigationManager Nav
 
 @if (!Auth.IsLoggedIn || !Auth.IsOfficial())
@@ -17,13 +18,32 @@
             <p>Welcome, @Auth.GetDisplayName()</p>
         </div>
         <div class="header-right">
+            <span class="badge badge-info">Official</span>
             <button class="btn btn-outline" @onclick="Logout">Logout</button>
         </div>
     </div>
 
-    <div class="card">
-        <h3 style="font-size: 16px; margin-bottom: 16px;">Transaction Processing</h3>
-        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+        <div class="card">
+            <h3 style="font-size: 16px; margin-bottom: 16px;">Quick Actions</h3>
+            <div class="quick-actions">
+                <a href="/official/transactions" class="btn btn-primary">Process Transactions</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="font-size: 16px; margin-bottom: 16px;">Your Role</h3>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-secondary);">Name</span>
+                    <span>@Auth.GetDisplayName()</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-secondary);">Role</span>
+                    <span>Branch Employee</span>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -32,7 +52,11 @@
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsOfficial())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
     }
 
     private async Task Logout()

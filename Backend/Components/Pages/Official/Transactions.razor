@@ -17,12 +17,19 @@
             <p>Review and process pending transactions</p>
         </div>
         <div class="header-right">
-            <a href="/official/dashboard" class="btn btn-outline">Back to Dashboard</a>
+            <a href="/official/dashboard" class="btn btn-outline">Back</a>
         </div>
     </div>
 
     <div class="card">
-        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
+        <p style="color: var(--text-secondary);">Transaction processing APIs are ready.</p>
+        <p style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;">Available APIs:</p>
+        <ul style="color: var(--text-secondary); font-size: 14px; margin-left: 20px;">
+            <li>POST /api/wallet/deposit - Process deposit</li>
+            <li>POST /api/wallet/withdraw - Process withdrawal</li>
+            <li>POST /api/wallet/transfer - Process transfer</li>
+            <li>GET /api/approval/pending - View pending approvals</li>
+        </ul>
     </div>
 </div>
 

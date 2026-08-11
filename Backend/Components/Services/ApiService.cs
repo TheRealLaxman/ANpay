@@ -120,6 +120,222 @@ public class ApiService
     {
         await _http.DeleteAsync($"{_baseUrl}/beneficiary/{id}");
     }
+
+    // Branches
+    public async Task<List<BranchDto>> GetBranchesAsync()
+    {
+        return await _http.GetFromJsonAsync<List<BranchDto>>($"{_baseUrl}/branch") ?? new();
+    }
+
+    public async Task<BranchDto> CreateBranchAsync(string name, string address, string city, string phone)
+    {
+        var response = await _http.PostAsJsonAsync($"{_baseUrl}/branch", new { name, address, city, phone });
+        return (await response.Content.ReadFromJsonAsync<BranchDto>())!;
+    }
+
+    public async Task<BranchDashboardDto> GetBranchDashboardAsync(Guid branchId)
+    {
+        return (await _http.GetFromJsonAsync<BranchDashboardDto>($"{_baseUrl}/branch/{branchId}/dashboard"))!;
+    }
+
+    // Employees
+    public async Task<List<EmployeeDto>> GetEmployeesAsync(Guid branchId)
+    {
+        return await _http.GetFromJsonAsync<List<EmployeeDto>>($"{_baseUrl}/employee/branch/{branchId}") ?? new();
+    }
+
+    // Reports
+    public async Task<DashboardStatsDto> GetDashboardStatsAsync()
+    {
+        return (await _http.GetFromJsonAsync<DashboardStatsDto>($"{_baseUrl}/report/dashboard"))!;
+    }
+
+    // Approvals
+    public async Task<List<ApprovalDto>> GetPendingApprovalsAsync()
+    {
+        return await _http.GetFromJsonAsync<List<ApprovalDto>>($"{_baseUrl}/approval/pending") ?? new();
+    }
+
+    public async Task ApproveRequestAsync(Guid id, string notes = "")
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/approval/{id}/approve", new { notes });
+    }
+
+    public async Task RejectRequestAsync(Guid id, string notes)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/approval/{id}/reject", new { notes });
+    }
+
+    // KYC
+    public async Task<List<KycDto>> GetPendingKycAsync()
+    {
+        return await _http.GetFromJsonAsync<List<KycDto>>($"{_baseUrl}/kyc/pending") ?? new();
+    }
+
+    public async Task ReviewKycAsync(Guid profileId, bool approve, string notes)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/kyc/{profileId}/review", new { approve, notes });
+    }
+
+    // Notifications
+    public async Task<List<NotificationDto>> GetNotificationsAsync(bool unreadOnly = false)
+    {
+        return await _http.GetFromJsonAsync<List<NotificationDto>>($"{_baseUrl}/notification?unreadOnly={unreadOnly}") ?? new();
+    }
+
+    public async Task<int> GetUnreadCountAsync()
+    {
+        var result = await _http.GetFromJsonAsync<UnreadCountResult>($"{_baseUrl}/notification/unread-count");
+        return result?.Count ?? 0;
+    }
+
+    public async Task MarkNotificationReadAsync(Guid id)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/notification/{id}/read", new { });
+    }
+
+    // Support Tickets
+    public async Task<List<TicketDto>> GetOpenTicketsAsync()
+    {
+        return await _http.GetFromJsonAsync<List<TicketDto>>($"{_baseUrl}/support/tickets/open") ?? new();
+    }
+
+    // Exchange Rates
+    public async Task<List<ExchangeRateDto>> GetExchangeRatesAsync()
+    {
+        return await _http.GetFromJsonAsync<List<ExchangeRateDto>>($"{_baseUrl}/exchange/rates") ?? new();
+    }
+
+    // Audit Logs
+    public async Task<List<AuditLogDto>> GetAuditLogsAsync(int skip = 0, int take = 100)
+    {
+        return await _http.GetFromJsonAsync<List<AuditLogDto>>($"{_baseUrl}/audit?skip={skip}&take={take}") ?? new();
+    }
+}
+
+// New DTOs
+public class BranchDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Address { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class BranchDashboardDto
+{
+    public string BranchName { get; set; } = string.Empty;
+    public int EmployeeCount { get; set; }
+    public decimal TodayDeposits { get; set; }
+    public decimal TodayWithdrawals { get; set; }
+    public int TodayTransfers { get; set; }
+    public int PendingApprovals { get; set; }
+    public decimal CashBalance { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+public class EmployeeDto
+{
+    public Guid Id { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string SubRole { get; set; } = string.Empty;
+    public string EmployeeCode { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+}
+
+public class DashboardStatsDto
+{
+    public int TotalUsers { get; set; }
+    public int TotalWallets { get; set; }
+    public decimal TotalBalance { get; set; }
+    public int TotalBranches { get; set; }
+    public int TodayTransactions { get; set; }
+    public int MonthTransactions { get; set; }
+    public decimal TodayVolume { get; set; }
+    public decimal MonthVolume { get; set; }
+    public int PendingApprovals { get; set; }
+    public int PendingKyc { get; set; }
+    public int OpenTickets { get; set; }
+}
+
+public class ApprovalDto
+{
+    public Guid Id { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string RequestedByName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class KycDto
+{
+    public Guid Id { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string IdType { get; set; } = string.Empty;
+    public string IdNumber { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime? SubmittedAt { get; set; }
+}
+
+public class NotificationDto
+{
+    public Guid Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public bool IsRead { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class UnreadCountResult
+{
+    public int Count { get; set; }
+}
+
+public class TicketDto
+{
+    public Guid Id { get; set; }
+    public string Subject { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string UserEmail { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ExchangeRateDto
+{
+    public Guid Id { get; set; }
+    public string FromCurrency { get; set; } = string.Empty;
+    public string ToCurrency { get; set; } = string.Empty;
+    public decimal BuyRate { get; set; }
+    public decimal SellRate { get; set; }
+    public DateTime LastUpdated { get; set; }
+}
+
+public class AuditLogDto
+{
+    public Guid Id { get; set; }
+    public string? UserId { get; set; }
+    public string UserName { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string Entity { get; set; } = string.Empty;
+    public string OldValues { get; set; } = string.Empty;
+    public string NewValues { get; set; } = string.Empty;
+    public string IpAddress { get; set; } = string.Empty;
+    public bool IsSuccess { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 // DTOs

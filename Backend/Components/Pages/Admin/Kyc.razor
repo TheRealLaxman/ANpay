@@ -1,0 +1,99 @@
+@page "/admin/kyc"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject ApiService Api
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>KYC Management</h1>
+            <p>Review pending KYC submissions</p>
+        </div>
+        <div class="header-right">
+            <a href="/admin/dashboard" class="btn btn-outline">Back</a>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="card"><p>Loading KYC submissions...</p></div>
+    }
+    else
+    {
+        <div class="card">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Name</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">ID Type</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">ID Number</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Submitted</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var kyc in pendingKyc)
+                    {
+                        <tr style="border-bottom: 1px solid var(--border-color);">
+                            <td style="padding: 12px 8px; font-weight: 500;">@kyc.FirstName @kyc.LastName</td>
+                            <td style="padding: 12px 8px;">@kyc.IdType</td>
+                            <td style="padding: 12px 8px;">@kyc.IdNumber</td>
+                            <td style="padding: 12px 8px; color: var(--text-secondary);">@(kyc.SubmittedAt?.ToString("MMM dd, yyyy") ?? "N/A")</td>
+                            <td style="padding: 12px 8px;">
+                                <button class="btn btn-sm btn-success" @onclick="() => ReviewKyc(kyc.Id, true)">Approve</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => ReviewKyc(kyc.Id, false)">Reject</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (!pendingKyc.Any())
+            {
+                <p style="text-align: center; padding: 24px; color: var(--text-secondary);">No pending KYC submissions</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<KycDto> pendingKyc = new();
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadKyc();
+    }
+
+    private async Task LoadKyc()
+    {
+        loading = true;
+        try { pendingKyc = await Api.GetPendingKycAsync(); }
+        catch { }
+        loading = false;
+    }
+
+    private async Task ReviewKyc(Guid profileId, bool approve)
+    {
+        try
+        {
+            await Api.ReviewKycAsync(profileId, approve, approve ? "Approved by admin" : "Rejected by admin");
+            await LoadKyc();
+        }
+        catch { }
+    }
+}

@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
 @inject AuthState Auth
+@inject ApiService Api
 @inject NavigationManager Nav
 
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
@@ -14,23 +15,59 @@
     <div class="page-header">
         <div class="header-left">
             <h1>System Settings</h1>
-            <p>Configure system-wide settings</p>
+            <p>Configure fees, limits, and exchange rates</p>
         </div>
         <div class="header-right">
-            <a href="/admin/dashboard" class="btn btn-outline">Back to Dashboard</a>
+            <a href="/admin/dashboard" class="btn btn-outline">Back</a>
         </div>
     </div>
 
-    <div class="card">
-        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+        <div class="card">
+            <h3 style="font-size: 16px; margin-bottom: 16px;">Exchange Rates</h3>
+            @if (exchangeRates.Any())
+            {
+                @foreach (var rate in exchangeRates)
+                {
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                        <span>@rate.FromCurrency / @rate.ToCurrency</span>
+                        <span>Buy: @rate.BuyRate | Sell: @rate.SellRate</span>
+                    </div>
+                }
+            }
+            else
+            {
+                <p style="color: var(--text-secondary);">No exchange rates configured</p>
+            }
+        </div>
+
+        <div class="card">
+            <h3 style="font-size: 16px; margin-bottom: 16px;">API Endpoints</h3>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--text-secondary);">
+                <div>POST /api/fee - Create fee</div>
+                <div>GET /api/fee - List fees</div>
+                <div>POST /api/limit - Create limit</div>
+                <div>GET /api/limit - List limits</div>
+                <div>POST /api/exchange/rates - Set rates</div>
+                <div>GET /api/exchange/rates - List rates</div>
+            </div>
+        </div>
     </div>
 </div>
 
 @code {
+    private List<ExchangeRateDto> exchangeRates = new();
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        try { exchangeRates = await Api.GetExchangeRatesAsync(); }
+        catch { }
     }
 }

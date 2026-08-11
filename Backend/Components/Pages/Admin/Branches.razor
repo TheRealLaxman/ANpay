@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
 @inject AuthState Auth
+@inject ApiService Api
 @inject NavigationManager Nav
 
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
@@ -17,20 +18,122 @@
             <p>Manage all branches</p>
         </div>
         <div class="header-right">
-            <a href="/admin/dashboard" class="btn btn-outline">Back to Dashboard</a>
+            <button class="btn btn-primary" @onclick="() => showCreateModal = true">Create Branch</button>
+            <a href="/admin/dashboard" class="btn btn-outline">Back</a>
         </div>
     </div>
 
-    <div class="card">
-        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
-    </div>
+    @if (loading)
+    {
+        <div class="card"><p>Loading branches...</p></div>
+    }
+    else
+    {
+        <div class="card">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Name</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">City</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Phone</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Status</th>
+                        <th style="text-align: left; padding: 12px 8px; color: var(--text-secondary);">Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var branch in branches)
+                    {
+                        <tr style="border-bottom: 1px solid var(--border-color);">
+                            <td style="padding: 12px 8px; font-weight: 500;">@branch.Name</td>
+                            <td style="padding: 12px 8px;">@branch.City</td>
+                            <td style="padding: 12px 8px;">@branch.Phone</td>
+                            <td style="padding: 12px 8px;">
+                                <span class="badge @(branch.Status == "Active" ? "badge-success" : "badge-warning")">@branch.Status</span>
+                            </td>
+                            <td style="padding: 12px 8px; color: var(--text-secondary);">@branch.CreatedAt.ToString("MMM dd, yyyy")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (!branches.Any())
+            {
+                <p style="text-align: center; padding: 24px; color: var(--text-secondary);">No branches found</p>
+            }
+        </div>
+    }
 </div>
 
+@if (showCreateModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Create Branch</h3>
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
+                <input class="form-input" @bind="newName" placeholder="Branch Name" />
+                <input class="form-input" @bind="newAddress" placeholder="Address" />
+                <input class="form-input" @bind="newCity" placeholder="City" />
+                <input class="form-input" @bind="newPhone" placeholder="Phone" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="CreateBranch">Create</button>
+                <button class="btn btn-outline" @onclick="() => showCreateModal = false">Cancel</button>
+            </div>
+            @if (!string.IsNullOrEmpty(alertMessage))
+            {
+                <p style="margin-top: 12px; color: var(--color-error); font-size: 14px;">@alertMessage</p>
+            }
+        </div>
+    </div>
+}
+
 @code {
+    private List<BranchDto> branches = new();
+    private bool loading = true;
+    private bool showCreateModal = false;
+    private string newName = string.Empty;
+    private string newAddress = string.Empty;
+    private string newCity = string.Empty;
+    private string newPhone = string.Empty;
+    private string alertMessage = string.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadBranches();
+    }
+
+    private async Task LoadBranches()
+    {
+        loading = true;
+        try { branches = await Api.GetBranchesAsync(); }
+        catch { }
+        loading = false;
+    }
+
+    private async Task CreateBranch()
+    {
+        alertMessage = string.Empty;
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            alertMessage = "Branch name is required";
+            return;
+        }
+        try
+        {
+            await Api.CreateBranchAsync(newName, newAddress, newCity, newPhone);
+            showCreateModal = false;
+            newName = newAddress = newCity = newPhone = string.Empty;
+            await LoadBranches();
+        }
+        catch (Exception ex)
+        {
+            alertMessage = ex.Message;
+        }
     }
 }

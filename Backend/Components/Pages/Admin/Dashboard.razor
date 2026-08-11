@@ -1,8 +1,8 @@
 @page "/admin/dashboard"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
-@inject ApiService Api
 @inject AuthState Auth
+@inject ApiService Api
 @inject NavigationManager Nav
 
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
@@ -11,80 +11,109 @@
     return;
 }
 
-<div style="max-width: 1200px; margin: 0 auto;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-        <div>
-            <h1 style="font-size: 24px; font-weight: 600;">SuperAdmin Dashboard</h1>
-            <p style="color: var(--text-secondary);">System overview and management</p>
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Admin Dashboard</h1>
+            <p>Welcome back, @Auth.GetDisplayName()</p>
         </div>
-        <div style="display: flex; gap: 12px;">
+        <div class="header-right">
+            <span class="badge badge-success">Super Admin</span>
             <button class="btn btn-outline" @onclick="Logout">Logout</button>
         </div>
     </div>
 
-    @if (!string.IsNullOrEmpty(message))
+    @if (loading)
     {
-        <div class="alert @(isSuccess ? "alert-success" : "alert-danger")">@message</div>
+        <div class="card"><p>Loading dashboard...</p></div>
     }
+    else if (stats != null)
+    {
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="stat-card">
+                <div class="stat-label">Total Users</div>
+                <div class="stat-value">@stats.TotalUsers.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Wallets</div>
+                <div class="stat-value">@stats.TotalWallets.ToString("N0")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Balance</div>
+                <div class="stat-value">₦@stats.TotalBalance.ToString("N2")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Branches</div>
+                <div class="stat-value">@stats.TotalBranches</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Today Transactions</div>
+                <div class="stat-value">@stats.TodayTransactions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Today Volume</div>
+                <div class="stat-value">₦@stats.TodayVolume.ToString("N2")</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Month Volume</div>
+                <div class="stat-value">₦@stats.MonthVolume.ToString("N2")</div>
+            </div>
+            <div class="stat-card @(stats.PendingApprovals > 0 ? "stat-warning" : "")">
+                <div class="stat-label">Pending Approvals</div>
+                <div class="stat-value">@stats.PendingApprovals</div>
+            </div>
+            <div class="stat-card @(stats.PendingKyc > 0 ? "stat-warning" : "")">
+                <div class="stat-label">Pending KYC</div>
+                <div class="stat-value">@stats.PendingKyc</div>
+            </div>
+            <div class="stat-card @(stats.OpenTickets > 0 ? "stat-warning" : "")">
+                <div class="stat-label">Open Tickets</div>
+                <div class="stat-value">@stats.OpenTickets</div>
+            </div>
+        </div>
 
-    <!-- Stats Cards -->
-    <div class="grid grid-4" style="margin-bottom: 24px;">
-        <div class="stat-card">
-            <div class="stat-icon white">U</div>
-            <div class="card-header">Total Users</div>
-            <div class="card-value">--</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon green">$</div>
-            <div class="card-header">Total Volume</div>
-            <div class="card-value">$0.00</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon red">B</div>
-            <div class="card-header">Active Branches</div>
-            <div class="card-value">--</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon white">T</div>
-            <div class="card-header">Transactions Today</div>
-            <div class="card-value">--</div>
-        </div>
-    </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div class="card">
+                <h3 style="font-size: 16px; margin-bottom: 16px;">Quick Actions</h3>
+                <div class="quick-actions">
+                    <a href="/admin/users" class="btn btn-primary">Manage Users</a>
+                    <a href="/admin/branches" class="btn btn-primary">Manage Branches</a>
+                    <a href="/admin/transactions" class="btn btn-primary">Transactions</a>
+                </div>
+            </div>
 
-    <!-- Navigation Cards -->
-    <div class="grid grid-2" style="margin-bottom: 24px;">
-        <a href="/admin/users" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
-            <div class="stat-icon white" style="margin-bottom: 12px;">U</div>
-            <h3 style="font-size: 18px; margin-bottom: 8px;">User Management</h3>
-            <p style="color: var(--text-secondary); font-size: 14px;">Manage all users, roles, and permissions</p>
-        </a>
-        <a href="/admin/branches" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
-            <div class="stat-icon red" style="margin-bottom: 12px;">B</div>
-            <h3 style="font-size: 18px; margin-bottom: 8px;">Branch Management</h3>
-            <p style="color: var(--text-secondary); font-size: 14px;">Create and manage branches</p>
-        </a>
-        <a href="/admin/transactions" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
-            <div class="stat-icon green" style="margin-bottom: 12px;">T</div>
-            <h3 style="font-size: 18px; margin-bottom: 8px;">Transaction Reports</h3>
-            <p style="color: var(--text-secondary); font-size: 14px;">View all system transactions</p>
-        </a>
-        <a href="/admin/settings" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
-            <div class="stat-icon white" style="margin-bottom: 12px;">S</div>
-            <h3 style="font-size: 18px; margin-bottom: 8px;">System Settings</h3>
-            <p style="color: var(--text-secondary); font-size: 14px;">Configure system parameters</p>
-        </a>
-    </div>
-
-    <!-- Recent Activity -->
-    <div class="card">
-        <h3 style="font-size: 16px; margin-bottom: 16px;">Recent Activity</h3>
-        <p style="color: var(--text-secondary);">No recent activity to display.</p>
-    </div>
+            <div class="card">
+                <h3 style="font-size: 16px; margin-bottom: 16px;">System Info</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">Platform</span>
+                        <span>ANpay Digital Wallet</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">Version</span>
+                        <span>1.0.0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">Admin Account</span>
+                        <span>@Auth.GetDisplayName()</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="card">
+            <p style="color: var(--color-error);">@error</p>
+            <button class="btn btn-primary" @onclick="LoadStats" style="margin-top: 12px;">Retry</button>
+        </div>
+    }
 </div>
 
 @code {
-    private string message = string.Empty;
-    private bool isSuccess = false;
+    private DashboardStatsDto? stats;
+    private bool loading = true;
+    private string error = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -92,7 +121,25 @@
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
             Nav.NavigateTo("/login");
+            return;
         }
+        Api.SetToken(Auth.Token);
+        await LoadStats();
+    }
+
+    private async Task LoadStats()
+    {
+        loading = true;
+        error = string.Empty;
+        try
+        {
+            stats = await Api.GetDashboardStatsAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to load dashboard: {ex.Message}";
+        }
+        loading = false;
     }
 
     private async Task Logout()

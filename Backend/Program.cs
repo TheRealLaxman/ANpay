@@ -8,6 +8,7 @@ using ANpay.Api.Data;
 using ANpay.Api.Middleware;
 using ANpay.Api.Models;
 using ANpay.Api.Services;
+using ANpay.Api.Hubs;
 using ANpay.Api.Components.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -42,6 +43,20 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtSettings["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(key)
     };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 // API Services
@@ -63,6 +78,9 @@ builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<SupportService>();
 builder.Services.AddScoped<ExchangeService>();
 builder.Services.AddScoped<CashService>();
+
+// SignalR
+builder.Services.AddSignalR();
 
 // Blazor Server Services
 builder.Services.AddRazorComponents()
@@ -159,5 +177,8 @@ app.MapControllers();
 app.MapStaticAssets();
 app.MapRazorComponents<ANpay.Api.Components.App>()
     .AddInteractiveServerRenderMode();
+
+// Map SignalR Hub
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();

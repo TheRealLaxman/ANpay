@@ -1,17 +1,21 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
 using ANpay.Api.Data;
 using ANpay.Api.Models;
+using ANpay.Api.Hubs;
 
 namespace ANpay.Api.Services;
 
 public class NotificationService
 {
     private readonly ApplicationDbContext _context;
+    private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ILogger<NotificationService> _logger;
 
-    public NotificationService(ApplicationDbContext context, ILogger<NotificationService> logger)
+    public NotificationService(ApplicationDbContext context, IHubContext<NotificationHub> hubContext, ILogger<NotificationService> logger)
     {
         _context = context;
+        _hubContext = hubContext;
         _logger = logger;
     }
 
@@ -31,6 +35,16 @@ public class NotificationService
 
         _context.Notifications.Add(notification);
         await _context.SaveChangesAsync();
+
+        await _hubContext.Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", new
+        {
+            id = notification.Id,
+            title,
+            message,
+            type = type.ToString(),
+            timestamp = notification.CreatedAt
+        });
+
         _logger.LogInformation("Notification sent to {UserId}: {Title}", userId, title);
     }
 
