@@ -7,7 +7,8 @@ public enum AppUserRole
     Customer = 0,
     Official = 1,
     BranchAdmin = 2,
-    SuperAdmin = 3
+    MainBranchAdmin = 3,
+    SuperAdmin = 4
 }
 
 public class ApplicationUser : IdentityUser
@@ -19,4 +20,8 @@ public class ApplicationUser : IdentityUser
     public AppUserRole Role { get; set; } = AppUserRole.Customer;
     public Guid? BranchId { get; set; }
     public ICollection<Wallet> Wallets { get; set; } = new List<Wallet>();
+    public EmployeeProfile? EmployeeProfile { get; set; }
+    public KycProfile? KycProfile { get; set; }
+    public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
+    public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 }

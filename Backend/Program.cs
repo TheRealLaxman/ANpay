@@ -49,6 +49,20 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<WalletService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<BeneficiaryService>();
+builder.Services.AddScoped<PermissionService>();
+builder.Services.AddScoped<BranchService>();
+builder.Services.AddScoped<EmployeeService>();
+builder.Services.AddScoped<KycService>();
+builder.Services.AddScoped<AuditService>();
+builder.Services.AddScoped<LedgerService>();
+builder.Services.AddScoped<FeeService>();
+builder.Services.AddScoped<LimitService>();
+builder.Services.AddScoped<ApprovalService>();
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<SupportService>();
+builder.Services.AddScoped<ExchangeService>();
+builder.Services.AddScoped<CashService>();
 
 // Blazor Server Services
 builder.Services.AddRazorComponents()
@@ -104,11 +118,20 @@ var app = builder.Build();
 // Global exception handling middleware (first in pipeline)
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
-// Seed roles and SuperAdmin
+// Seed roles, admin, permissions, ledger, limits
 using (var scope = app.Services.CreateScope())
 {
     var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
     await authService.SeedRolesAndAdminAsync();
+
+    var permissionService = scope.ServiceProvider.GetRequiredService<PermissionService>();
+    await permissionService.SeedPermissionsAsync();
+
+    var ledgerService = scope.ServiceProvider.GetRequiredService<LedgerService>();
+    await ledgerService.SeedAccountsAsync();
+
+    var limitService = scope.ServiceProvider.GetRequiredService<LimitService>();
+    await limitService.SeedDefaultLimitsAsync();
 }
 
 // Configure the HTTP request pipeline.
