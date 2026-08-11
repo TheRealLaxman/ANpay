@@ -78,6 +78,11 @@ builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<SupportService>();
 builder.Services.AddScoped<ExchangeService>();
 builder.Services.AddScoped<CashService>();
+builder.Services.AddScoped<CryptoService>();
+builder.Services.AddScoped<MerchantService>();
+builder.Services.AddScoped<QrPaymentService>();
+builder.Services.AddSingleton<IEmailService, ConsoleEmailService>();
+builder.Services.AddSingleton<ISmsService, ConsoleSmsService>();
 
 // SignalR
 builder.Services.AddSignalR();

@@ -30,6 +30,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TicketMessage> TicketMessages { get; set; }
     public DbSet<ExchangeRate> ExchangeRates { get; set; }
     public DbSet<CashBalance> CashBalances { get; set; }
+    public DbSet<CryptoWallet> CryptoWallets { get; set; }
+    public DbSet<CryptoTransaction> CryptoTransactions { get; set; }
+    public DbSet<CryptoNetworkConfig> CryptoNetworkConfigs { get; set; }
+    public DbSet<Merchant> Merchants { get; set; }
+    public DbSet<MerchantPayment> MerchantPayments { get; set; }
+    public DbSet<MerchantSettlement> MerchantSettlements { get; set; }
+    public DbSet<QrCode> QrCodes { get; set; }
+    public DbSet<PaymentLink> PaymentLinks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -269,6 +277,82 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<ExchangeRate>(entity =>
         {
             entity.HasIndex(er => new { er.FromCurrency, er.ToCurrency }).IsUnique();
+        });
+
+        // CryptoWallet
+        builder.Entity<CryptoWallet>(entity =>
+        {
+            entity.HasOne(cw => cw.User)
+                .WithMany()
+                .HasForeignKey(cw => cw.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(cw => cw.UserId);
+            entity.HasIndex(cw => new { cw.UserId, cw.Asset, cw.Network }).IsUnique();
+        });
+
+        // CryptoTransaction
+        builder.Entity<CryptoTransaction>(entity =>
+        {
+            entity.HasOne(ct => ct.CryptoWallet)
+                .WithMany(cw => cw.Transactions)
+                .HasForeignKey(ct => ct.CryptoWalletId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(ct => ct.CryptoWalletId);
+            entity.HasIndex(ct => ct.TxHash);
+            entity.HasIndex(ct => ct.CreatedAt);
+        });
+
+        // Merchant
+        builder.Entity<Merchant>(entity =>
+        {
+            entity.HasOne(m => m.User)
+                .WithMany()
+                .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(m => m.UserId).IsUnique();
+        });
+
+        // MerchantPayment
+        builder.Entity<MerchantPayment>(entity =>
+        {
+            entity.HasOne(mp => mp.Merchant)
+                .WithMany(m => m.Payments)
+                .HasForeignKey(mp => mp.MerchantId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(mp => mp.MerchantId);
+            entity.HasIndex(mp => mp.OrderReference);
+            entity.HasIndex(mp => mp.CreatedAt);
+        });
+
+        // MerchantSettlement
+        builder.Entity<MerchantSettlement>(entity =>
+        {
+            entity.HasOne(ms => ms.Merchant)
+                .WithMany(m => m.Settlements)
+                .HasForeignKey(ms => ms.MerchantId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(ms => ms.MerchantId);
+        });
+
+        // QrCode
+        builder.Entity<QrCode>(entity =>
+        {
+            entity.HasOne(q => q.CreatedBy)
+                .WithMany()
+                .HasForeignKey(q => q.CreatedById)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(q => q.Code).IsUnique();
+            entity.HasIndex(q => q.CreatedById);
+        });
+
+        // PaymentLink
+        builder.Entity<PaymentLink>(entity =>
+        {
+            entity.HasOne(pl => pl.CreatedBy)
+                .WithMany()
+                .HasForeignKey(pl => pl.CreatedById)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(pl => pl.LinkUrl);
         });
     }
 }
