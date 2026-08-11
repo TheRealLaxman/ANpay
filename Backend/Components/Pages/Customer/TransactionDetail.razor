@@ -1,0 +1,100 @@
+@page "/customer/transaction/{Id:guid}"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div style="max-width: 600px; margin: 0 auto;">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
+        <button class="btn btn-outline" style="padding: 8px 12px;" @onclick='() => Nav.NavigateTo("/customer/dashboard")'>← Back</button>
+        <h1 style="font-size: 24px; font-weight: 600;">Transaction Details</h1>
+    </div>
+
+    @if (transaction == null)
+    {
+        <div class="card">
+            <p style="color: var(--text-secondary); text-align: center;">Loading transaction...</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 48px; margin-bottom: 8px;">
+                    @(transaction.Type == "Deposit" || transaction.Type == "TransferIn" ? "↓" : "↑")
+                </div>
+                <div style="font-size: 32px; font-weight: 700; color: @(transaction.Type == "Deposit" || transaction.Type == "TransferIn" ? "var(--accent-green)" : "var(--accent-red)")">
+                    @(transaction.Type == "Deposit" || transaction.Type == "TransferIn" ? "+" : "-")$@transaction.Amount.ToString("N2")
+                </div>
+                <div style="margin-top: 8px;">
+                    <span class="badge @(transaction.Status == "Completed" ? "badge-success" : transaction.Status == "Pending" ? "badge-warning" : "badge-danger")">
+                        @transaction.Status
+                    </span>
+                </div>
+            </div>
+
+            <div style="border-top: 1px solid var(--border-color); padding-top: 16px;">
+                <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color);">
+                    <span style="color: var(--text-secondary);">Type</span>
+                    <span style="font-weight: 500;">@transaction.Type</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color);">
+                    <span style="color: var(--text-secondary);">Reference Number</span>
+                    <span style="font-weight: 500; font-family: monospace;">@(transaction.ReferenceNumber ?? "N/A")</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color);">
+                    <span style="color: var(--text-secondary);">Description</span>
+                    <span style="font-weight: 500;">@(transaction.Description ?? "No description")</span>
+                </div>
+                @if (transaction.DestinationWalletName != null)
+                {
+                    <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color);">
+                        <span style="color: var(--text-secondary);">Destination Wallet</span>
+                        <span style="font-weight: 500;">@transaction.DestinationWalletName</span>
+                    </div>
+                }
+                <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color);">
+                    <span style="color: var(--text-secondary);">Balance Before</span>
+                    <span style="font-weight: 500;">$@transaction.BalanceBefore.ToString("N2")</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color);">
+                    <span style="color: var(--text-secondary);">Balance After</span>
+                    <span style="font-weight: 500;">$@transaction.BalanceAfter.ToString("N2")</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 12px 0;">
+                    <span style="color: var(--text-secondary);">Date & Time</span>
+                    <span style="font-weight: 500;">@transaction.CreatedAt.ToString("MMM dd, yyyy HH:mm:ss")</span>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private TransactionDto? transaction;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadTransaction();
+    }
+
+    private async Task LoadTransaction()
+    {
+        try
+        {
+            transaction = await Api.GetTransactionByIdAsync(Id);
+        }
+        catch
+        {
+            Nav.NavigateTo("/customer/dashboard");
+        }
+    }
+}

@@ -11,10 +11,12 @@ namespace ANpay.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly AuthService _authService;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(AuthService authService)
+    public AuthController(AuthService authService, ILogger<AuthController> logger)
     {
         _authService = authService;
+        _logger = logger;
     }
 
     [HttpPost("register")]
@@ -33,21 +35,5 @@ public class AuthController : ControllerBase
         if (!result.Success)
             return Unauthorized(result);
         return Ok(result);
-    }
-
-    [Authorize]
-    [HttpGet("profile")]
-    public async Task<ActionResult<UserProfileDto>> GetProfile()
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var profile = await _authService.GetProfileAsync(userId!);
-        if (profile == null)
-            return NotFound();
-        return Ok(profile);
-    }
-
-    private string GetUserId()
-    {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)!;
     }
 }

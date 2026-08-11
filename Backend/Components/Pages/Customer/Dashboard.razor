@@ -1,296 +1,324 @@
-@page "/customer/dashboard"
+﻿@page "/customer/dashboard"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
 @inject ApiService Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 
-@if (!Auth.IsLoggedIn)
-{
-    Nav.NavigateTo("/login");
-    return;
-}
-
-<div style="max-width: 1200px; margin: 0 auto;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-        <div>
-            <h1 style="font-size: 24px; font-weight: 600;">Welcome, @Auth.GetDisplayName()</h1>
-            <p style="color: var(--text-secondary);">@Auth.Email</p>
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Welcome, @Auth.GetDisplayName()</h1>
         </div>
-        <button class="btn btn-outline" @onclick="Logout">Logout</button>
-    </div>
+        <div class="header-right">
+            <a href="/customer/profile" class="btn btn-outline">Profile</a>
+            <button class="btn btn-danger" @onclick="Logout">Logout</button>
+        </div>
+    </header>
 
     @if (!string.IsNullOrEmpty(message))
     {
-        <div class="alert @(isSuccess ? "alert-success" : "alert-danger")">@message</div>
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
     }
 
-    <!-- Stats Cards -->
-    <div class="grid grid-3" style="margin-bottom: 24px;">
-        <div class="stat-card">
+    @if (showConfirmDialog)
+    {
+        <div class="modal-overlay" @onclick="CancelConfirm">
+            <div class="modal-content" @onclick:stopPropagation>
+                <h3>Confirm</h3>
+                <p>@confirmMessage</p>
+                <div class="modal-actions">
+                    <button class="btn btn-primary" @onclick="ExecuteConfirm">Yes</button>
+                    <button class="btn btn-outline" @onclick="CancelConfirm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="grid grid-3">
+        <div class="card stat-card">
             <div class="stat-icon green">$</div>
+            <div class="card-value">@wallets.Sum(w => w.Balance).ToString("N2")</div>
             <div class="card-header">Total Balance</div>
-            <div class="card-value">$@totalBalance.ToString("N2")</div>
         </div>
-        <div class="stat-card">
-            <div class="stat-icon white">#</div>
-            <div class="card-header">Total Wallets</div>
-            <div class="card-value">@(wallets?.Count ?? 0)</div>
+        <div class="card stat-card">
+            <div class="stat-icon white">@wallets.Count</div>
+            <div class="card-header">Active Wallets</div>
         </div>
-        <div class="stat-card">
-            <div class="stat-icon red">!</div>
-            <div class="card-header">Pending Transactions</div>
-            <div class="card-value">0</div>
+        <div class="card stat-card">
+            <div class="stat-icon red">@beneficiaries.Count</div>
+            <div class="card-header">Beneficiaries</div>
         </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="card" style="margin-bottom: 24px;">
-        <h3 style="font-size: 16px; margin-bottom: 16px;">Quick Actions</h3>
-        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-            <button class="btn btn-primary" @onclick='() => showDepositModal = true'>Deposit</button>
-            <button class="btn btn-secondary" @onclick='() => showWithdrawModal = true'>Withdraw</button>
-            <button class="btn btn-outline" @onclick='() => showTransferModal = true'>Transfer</button>
-            <button class="btn btn-outline" @onclick='() => showCreateWalletModal = true'>+ New Wallet</button>
-        </div>
+    <div class="quick-actions">
+        <button class="btn btn-primary" @onclick="OpenDepositModal">Deposit</button>
+        <button class="btn btn-secondary" @onclick="OpenWithdrawModal">Withdraw</button>
+        <button class="btn btn-success" @onclick="OpenTransferModal">Transfer</button>
+        <button class="btn btn-outline" @onclick="OpenCreateWalletModal">New Wallet</button>
+        <button class="btn btn-outline" @onclick="OpenAddBeneficiaryModal">Add Beneficiary</button>
     </div>
 
-    <!-- Wallets -->
-    <div class="card" style="margin-bottom: 24px;">
-        <h3 style="font-size: 16px; margin-bottom: 16px;">My Wallets</h3>
-        @if (wallets == null || !wallets.Any())
-        {
-            <p style="color: var(--text-secondary);">No wallets found. Create your first wallet!</p>
-        }
-        else
-        {
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Wallet Name</th>
-                        <th>Balance</th>
-                        <th>Currency</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var wallet in wallets)
-                    {
-                        <tr>
-                            <td>@wallet.WalletName</td>
-                            <td class="@(wallet.Balance >= 0 ? "positive" : "negative")" style="color: @(wallet.Balance >= 0 ? "var(--accent-green)" : "var(--accent-red)")">
-                                $@wallet.Balance.ToString("N2")
-                            </td>
-                            <td>@wallet.Currency</td>
-                            <td>
-                                <button class="btn btn-outline" style="padding: 6px 12px; font-size: 12px;" @onclick="() => selectedWalletId = wallet.Id">Select</button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    </div>
-
-    <!-- Recent Transactions -->
     <div class="card">
-        <h3 style="font-size: 16px; margin-bottom: 16px;">Recent Transactions</h3>
-        @if (recentTransactions == null || !recentTransactions.Any())
-        {
-            <p style="color: var(--text-secondary);">No transactions yet.</p>
-        }
-        else
-        {
-            <table class="table">
-                <thead>
+        <div class="card-header">My Wallets</div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Currency</th>
+                    <th>Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var wallet in wallets)
+                {
                     <tr>
-                        <th>Type</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Date</th>
-                        <th>Description</th>
+                        <td>@wallet.WalletName</td>
+                        <td>@wallet.Currency</td>
+                        <td>@wallet.Balance.ToString("N2")</td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach (var tx in recentTransactions)
-                    {
-                        <tr>
-                            <td>
-                                <span class="badge @(tx.Type == "Deposit" || tx.Type == "TransferIn" ? "badge-success" : "badge-danger")">
-                                    @tx.Type
-                                </span>
-                            </td>
-                            <td style="color: @(tx.Type == "Deposit" || tx.Type == "TransferIn" ? "var(--accent-green)" : "var(--accent-red)")">
-                                @(tx.Type == "Deposit" || tx.Type == "TransferIn" ? "+" : "-")$@tx.Amount.ToString("N2")
-                            </td>
-                            <td>
-                                <span class="badge @(tx.Status == "Completed" ? "badge-success" : "badge-warning")">
-                                    @tx.Status
-                                </span>
-                            </td>
-                            <td style="color: var(--text-secondary);">@tx.CreatedAt.ToString("MMM dd, yyyy HH:mm")</td>
-                            <td>@tx.Description</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Saved Beneficiaries</div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Nickname</th>
+                    <th>Wallet Name</th>
+                    <th>Email</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ben in beneficiaries)
+                {
+                    <tr>
+                        <td>@ben.Nickname</td>
+                        <td>@ben.WalletName</td>
+                        <td>@ben.Email</td>
+                        <td>
+                            <button class="btn btn-success" @onclick="() => QuickTransfer(ben)">Transfer</button>
+                            <button class="btn btn-danger" @onclick="() => ConfirmDeleteBeneficiary(ben)">Remove</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Recent Transactions</div>
+        <div class="table-filters">
+            <input class="form-control" placeholder="Search transactions..." @bind="searchTerm" @bind:after="FilterTransactions" />
+            <select class="form-control" @bind="filterType" @bind:after="FilterTransactions">
+                <option value="">All Types</option>
+                <option value="Deposit">Deposit</option>
+                <option value="Withdrawal">Withdrawal</option>
+                <option value="TransferIn">Transfer In</option>
+                <option value="TransferOut">Transfer Out</option>
+            </select>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Amount</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var tx in filteredTransactions)
+                {
+                    <tr>
+                        <td>@tx.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@tx.Description</td>
+                        <td>@tx.Amount.ToString("N2")</td>
+                        <td><span class="badge @GetTypeBadgeClass(tx.Type)">@tx.Type</span></td>
+                        <td><span class="badge @GetStatusBadgeClass(tx.Status)">@tx.Status</span></td>
+                        <td><a href="/customer/transaction/@tx.Id" class="btn btn-outline">Details</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 </div>
 
-<!-- Deposit Modal -->
 @if (showDepositModal)
 {
-    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-        <div class="card" style="width: 400px;">
-            <h3 style="margin-bottom: 16px;">Deposit Money</h3>
+    <div class="modal-overlay" @onclick="CloseDepositModal">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Deposit</h3>
             <div class="form-group">
-                <label class="form-label">Select Wallet</label>
+                <label class="form-label">Wallet</label>
                 <select class="form-control" @bind="depositWalletId">
-                    <option value="">Choose wallet...</option>
-                    @if (wallets != null)
+                    @foreach (var w in wallets)
                     {
-                        @foreach (var w in wallets)
-                        {
-                            <option value="@w.Id">@w.WalletName ($@w.Balance.ToString("N2"))</option>
-                        }
+                        <option value="@w.Id">@w.WalletName (@w.Currency)</option>
                     }
                 </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Amount</label>
-                <input type="number" class="form-control" @bind="depositAmount" placeholder="0.00" min="0.01" step="0.01" />
+                <input class="form-control" type="number" @bind="depositAmount" />
             </div>
             <div class="form-group">
                 <label class="form-label">Description</label>
-                <input type="text" class="form-control" @bind="depositDescription" placeholder="Optional description" />
+                <input class="form-control" @bind="depositDescription" />
             </div>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn btn-outline" style="flex: 1;" @onclick='() => showDepositModal = false'>Cancel</button>
-                <button class="btn btn-success" style="flex: 1;" @onclick="HandleDeposit">Deposit</button>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleDeposit">Confirm Deposit</button>
+                <button class="btn btn-outline" @onclick="CloseDepositModal">Cancel</button>
             </div>
         </div>
     </div>
 }
 
-<!-- Withdraw Modal -->
 @if (showWithdrawModal)
 {
-    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-        <div class="card" style="width: 400px;">
-            <h3 style="margin-bottom: 16px;">Withdraw Money</h3>
+    <div class="modal-overlay" @onclick="CloseWithdrawModal">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Withdraw</h3>
             <div class="form-group">
-                <label class="form-label">Select Wallet</label>
+                <label class="form-label">Wallet</label>
                 <select class="form-control" @bind="withdrawWalletId">
-                    <option value="">Choose wallet...</option>
-                    @if (wallets != null)
+                    @foreach (var w in wallets)
                     {
-                        @foreach (var w in wallets)
-                        {
-                            <option value="@w.Id">@w.WalletName ($@w.Balance.ToString("N2"))</option>
-                        }
+                        <option value="@w.Id">@w.WalletName (@w.Currency)</option>
                     }
                 </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Amount</label>
-                <input type="number" class="form-control" @bind="withdrawAmount" placeholder="0.00" min="0.01" step="0.01" />
+                <input class="form-control" type="number" @bind="withdrawAmount" />
             </div>
             <div class="form-group">
                 <label class="form-label">Description</label>
-                <input type="text" class="form-control" @bind="withdrawDescription" placeholder="Optional description" />
+                <input class="form-control" @bind="withdrawDescription" />
             </div>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn btn-outline" style="flex: 1;" @onclick='() => showWithdrawModal = false'>Cancel</button>
-                <button class="btn btn-danger" style="flex: 1;" @onclick="HandleWithdraw">Withdraw</button>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleWithdraw">Confirm Withdrawal</button>
+                <button class="btn btn-outline" @onclick="CloseWithdrawModal">Cancel</button>
             </div>
         </div>
     </div>
 }
 
-<!-- Transfer Modal -->
 @if (showTransferModal)
 {
-    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-        <div class="card" style="width: 400px;">
-            <h3 style="margin-bottom: 16px;">Transfer Money</h3>
+    <div class="modal-overlay" @onclick="CloseTransferModal">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Transfer</h3>
             <div class="form-group">
                 <label class="form-label">From Wallet</label>
                 <select class="form-control" @bind="transferFromWalletId">
-                    <option value="">Choose source wallet...</option>
-                    @if (wallets != null)
+                    @foreach (var w in wallets)
                     {
-                        @foreach (var w in wallets)
-                        {
-                            <option value="@w.Id">@w.WalletName ($@w.Balance.ToString("N2"))</option>
-                        }
+                        <option value="@w.Id">@w.WalletName (@w.Currency)</option>
                     }
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label">To Wallet ID</label>
-                <input type="text" class="form-control" @bind="transferToWalletId" placeholder="Enter destination wallet ID" />
+                <label class="form-label">To Wallet / Account</label>
+                <select class="form-control" @bind="transferToWalletId">
+                    <option value="">-- Select a beneficiary --</option>
+                    @foreach (var ben in beneficiaries)
+                    {
+                        <option value="@ben.WalletId">@ben.Nickname (@ben.WalletName)</option>
+                    }
+                </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Amount</label>
-                <input type="number" class="form-control" @bind="transferAmount" placeholder="0.00" min="0.01" step="0.01" />
+                <input class="form-control" type="number" @bind="transferAmount" />
             </div>
             <div class="form-group">
                 <label class="form-label">Description</label>
-                <input type="text" class="form-control" @bind="transferDescription" placeholder="Optional description" />
+                <input class="form-control" @bind="transferDescription" />
             </div>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn btn-outline" style="flex: 1;" @onclick='() => showTransferModal = false'>Cancel</button>
-                <button class="btn btn-primary" style="flex: 1;" @onclick="HandleTransfer">Transfer</button>
+            <div class="modal-actions">
+                <button class="btn btn-success" @onclick="HandleTransfer">Confirm Transfer</button>
+                <button class="btn btn-outline" @onclick="CloseTransferModal">Cancel</button>
             </div>
         </div>
     </div>
 }
 
-<!-- Create Wallet Modal -->
 @if (showCreateWalletModal)
 {
-    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-        <div class="card" style="width: 400px;">
-            <h3 style="margin-bottom: 16px;">Create New Wallet</h3>
+    <div class="modal-overlay" @onclick="CloseCreateWalletModal">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Create Wallet</h3>
             <div class="form-group">
                 <label class="form-label">Wallet Name</label>
-                <input type="text" class="form-control" @bind="newWalletName" placeholder="e.g., Savings, Travel" />
+                <input class="form-control" @bind="newWalletName" />
             </div>
             <div class="form-group">
                 <label class="form-label">Currency</label>
                 <select class="form-control" @bind="newWalletCurrency">
-                    <option value="USD">USD - US Dollar</option>
-                    <option value="EUR">EUR - Euro</option>
-                    <option value="GBP">GBP - British Pound</option>
-                    <option value="NPR">NPR - Nepalese Rupee</option>
-                    <option value="INR">INR - Indian Rupee</option>
+                    <option value="NGN">NGN</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
                 </select>
             </div>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn btn-outline" style="flex: 1;" @onclick='() => showCreateWalletModal = false'>Cancel</button>
-                <button class="btn btn-primary" style="flex: 1;" @onclick="HandleCreateWallet">Create</button>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateWallet">Create</button>
+                <button class="btn btn-outline" @onclick="CloseCreateWalletModal">Cancel</button>
             </div>
         </div>
     </div>
 }
 
+@if (showAddBeneficiaryModal)
+{
+    <div class="modal-overlay" @onclick="CloseAddBeneficiaryModal">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Add Beneficiary</h3>
+            <div class="form-group">
+                <label class="form-label">Nickname</label>
+                <input class="form-control" @bind="bNickname" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Wallet ID</label>
+                <input class="form-control" @bind="bWalletId" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input class="form-control" @bind="bEmail" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateBeneficiary">Add</button>
+                <button class="btn btn-outline" @onclick="CloseAddBeneficiaryModal">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
 @code {
-    private List<WalletDto>? wallets;
-    private List<TransactionDto>? recentTransactions;
-    private decimal totalBalance = 0;
-    private Guid? selectedWalletId;
+    private List<WalletDto> wallets = new();
+    private List<BeneficiaryDto> beneficiaries = new();
+    private List<TransactionDto> allTransactions = new();
+    private List<TransactionDto> filteredTransactions = new();
 
     private string message = string.Empty;
-    private bool isSuccess = false;
+    private bool isSuccess = true;
 
-    // Modal states
-    private bool showDepositModal = false;
-    private bool showWithdrawModal = false;
-    private bool showTransferModal = false;
-    private bool showCreateWalletModal = false;
+    private bool showConfirmDialog;
+    private string confirmMessage = string.Empty;
+    private Func<Task>? confirmAction;
 
-    // Form fields
+    private bool showDepositModal;
+    private bool showWithdrawModal;
+    private bool showTransferModal;
+    private bool showCreateWalletModal;
+    private bool showAddBeneficiaryModal;
+
     private string depositWalletId = string.Empty;
     private decimal depositAmount;
     private string depositDescription = string.Empty;
@@ -305,11 +333,19 @@
     private string transferDescription = string.Empty;
 
     private string newWalletName = string.Empty;
-    private string newWalletCurrency = "USD";
+    private string newWalletCurrency = "NGN";
+
+    private string bNickname = string.Empty;
+    private string bWalletId = string.Empty;
+    private string bEmail = string.Empty;
+
+    private Guid? selectedWalletId;
+
+    private string searchTerm = string.Empty;
+    private string filterType = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn)
         {
             Nav.NavigateTo("/login");
@@ -322,119 +358,241 @@
     {
         try
         {
-            wallets = await Api.GetWalletsAsync();
-            totalBalance = wallets?.Sum(w => w.Balance) ?? 0;
-
-            if (wallets != null && wallets.Any())
+            wallets = await Api.GetWalletsAsync() ?? new List<WalletDto>();
+            if (wallets.Any())
             {
-                var history = await Api.GetTransactionHistoryAsync(wallets.First().Id);
-                recentTransactions = history.Transactions?.Take(5).ToList();
+                selectedWalletId = wallets.First().Id;
+                var history = await Api.GetTransactionHistoryAsync(selectedWalletId.Value);
+                allTransactions = history?.Transactions?.OrderByDescending(t => t.CreatedAt).ToList() ?? new List<TransactionDto>();
             }
+            FilterTransactions();
+            await LoadBeneficiaries();
         }
         catch (Exception ex)
         {
-            message = "Failed to load data. Please refresh.";
-            isSuccess = false;
+            ShowAlert($"Failed to load data: {ex.Message}", "danger");
         }
     }
+
+    private async Task LoadBeneficiaries()
+    {
+        try
+        {
+            beneficiaries = await Api.GetBeneficiariesAsync() ?? new List<BeneficiaryDto>();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load beneficiaries: {ex.Message}", "danger");
+        }
+    }
+
+    private void FilterTransactions()
+    {
+        var result = allTransactions.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+            result = result.Where(t => t.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(filterType))
+            result = result.Where(t => t.Type.Equals(filterType, StringComparison.OrdinalIgnoreCase));
+        filteredTransactions = result.ToList();
+    }
+
+    private void ShowAlert(string msg, string type)
+    {
+        message = msg;
+        isSuccess = type == "success";
+        StateHasChanged();
+    }
+
+    private void ShowConfirmation(string msg, Func<Task> action)
+    {
+        confirmMessage = msg;
+        confirmAction = action;
+        showConfirmDialog = true;
+    }
+
+    private async Task ExecuteConfirm()
+    {
+        showConfirmDialog = false;
+        if (confirmAction != null)
+        {
+            await confirmAction();
+        }
+        confirmAction = null;
+    }
+
+    private void CancelConfirm()
+    {
+        showConfirmDialog = false;
+        confirmAction = null;
+    }
+
+    private void OpenDepositModal()
+    {
+        depositWalletId = wallets.FirstOrDefault()?.Id.ToString() ?? string.Empty;
+        depositAmount = 0;
+        depositDescription = string.Empty;
+        showDepositModal = true;
+    }
+    private void CloseDepositModal() { showDepositModal = false; }
+
+    private void OpenWithdrawModal()
+    {
+        withdrawWalletId = wallets.FirstOrDefault()?.Id.ToString() ?? string.Empty;
+        withdrawAmount = 0;
+        withdrawDescription = string.Empty;
+        showWithdrawModal = true;
+    }
+    private void CloseWithdrawModal() { showWithdrawModal = false; }
+
+    private void OpenTransferModal()
+    {
+        transferFromWalletId = wallets.FirstOrDefault()?.Id.ToString() ?? string.Empty;
+        transferToWalletId = string.Empty;
+        transferAmount = 0;
+        transferDescription = string.Empty;
+        showTransferModal = true;
+    }
+    private void CloseTransferModal() { showTransferModal = false; }
+
+    private void OpenCreateWalletModal()
+    {
+        newWalletName = string.Empty;
+        newWalletCurrency = "NGN";
+        showCreateWalletModal = true;
+    }
+    private void CloseCreateWalletModal() { showCreateWalletModal = false; }
+
+    private void OpenAddBeneficiaryModal()
+    {
+        bNickname = string.Empty;
+        bWalletId = string.Empty;
+        bEmail = string.Empty;
+        showAddBeneficiaryModal = true;
+    }
+    private void CloseAddBeneficiaryModal() { showAddBeneficiaryModal = false; }
 
     private async Task HandleDeposit()
     {
         if (!Guid.TryParse(depositWalletId, out var walletId) || depositAmount <= 0)
         {
-            message = "Please select a wallet and enter a valid amount.";
-            isSuccess = false;
+            ShowAlert("Please select a wallet and enter a valid amount.", "danger");
             return;
         }
-
-        try
+        ShowConfirmation($"Deposit {depositAmount:N2} to wallet?", async () =>
         {
-            await Api.DepositAsync(walletId, depositAmount, depositDescription);
-            message = "Deposit successful!";
-            isSuccess = true;
-            showDepositModal = false;
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            message = "Deposit failed. Please try again.";
-            isSuccess = false;
-        }
+            try
+            {
+                await Api.DepositAsync(walletId, depositAmount, depositDescription);
+                ShowAlert("Deposit successful.", "success");
+                CloseDepositModal();
+                await LoadData();
+            }
+            catch (Exception ex) { ShowAlert($"Deposit failed: {ex.Message}", "danger"); }
+        });
     }
 
     private async Task HandleWithdraw()
     {
         if (!Guid.TryParse(withdrawWalletId, out var walletId) || withdrawAmount <= 0)
         {
-            message = "Please select a wallet and enter a valid amount.";
-            isSuccess = false;
+            ShowAlert("Please select a wallet and enter a valid amount.", "danger");
             return;
         }
-
-        try
+        ShowConfirmation($"Withdraw {withdrawAmount:N2} from wallet?", async () =>
         {
-            await Api.WithdrawAsync(walletId, withdrawAmount, withdrawDescription);
-            message = "Withdrawal successful!";
-            isSuccess = true;
-            showWithdrawModal = false;
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            message = "Withdrawal failed. Please try again.";
-            isSuccess = false;
-        }
+            try
+            {
+                await Api.WithdrawAsync(walletId, withdrawAmount, withdrawDescription);
+                ShowAlert("Withdrawal successful.", "success");
+                CloseWithdrawModal();
+                await LoadData();
+            }
+            catch (Exception ex) { ShowAlert($"Withdrawal failed: {ex.Message}", "danger"); }
+        });
     }
 
     private async Task HandleTransfer()
     {
-        if (!Guid.TryParse(transferFromWalletId, out var fromWalletId) ||
-            !Guid.TryParse(transferToWalletId, out var toWalletId) ||
+        if (!Guid.TryParse(transferFromWalletId, out var fromId) ||
+            !Guid.TryParse(transferToWalletId, out var toId) ||
             transferAmount <= 0)
         {
-            message = "Please fill all fields with valid values.";
-            isSuccess = false;
+            ShowAlert("Please fill all fields with valid values.", "danger");
             return;
         }
-
-        try
+        if (fromId == toId)
         {
-            await Api.TransferAsync(fromWalletId, toWalletId, transferAmount, transferDescription);
-            message = "Transfer successful!";
-            isSuccess = true;
-            showTransferModal = false;
-            await LoadData();
+            ShowAlert("Cannot transfer to the same wallet.", "danger");
+            return;
         }
-        catch (Exception ex)
+        ShowConfirmation($"Transfer {transferAmount:N2}?", async () =>
         {
-            message = "Transfer failed. Please try again.";
-            isSuccess = false;
-        }
+            try
+            {
+                await Api.TransferAsync(fromId, toId, transferAmount, transferDescription);
+                ShowAlert("Transfer successful.", "success");
+                CloseTransferModal();
+                await LoadData();
+            }
+            catch (Exception ex) { ShowAlert($"Transfer failed: {ex.Message}", "danger"); }
+        });
     }
 
     private async Task HandleCreateWallet()
     {
-        if (string.IsNullOrWhiteSpace(newWalletName))
-        {
-            message = "Please enter a wallet name.";
-            isSuccess = false;
-            return;
-        }
-
         try
         {
             await Api.CreateWalletAsync(newWalletName, newWalletCurrency);
-            message = "Wallet created successfully!";
-            isSuccess = true;
-            showCreateWalletModal = false;
-            newWalletName = string.Empty;
+            ShowAlert("Wallet created.", "success");
+            CloseCreateWalletModal();
             await LoadData();
         }
-        catch (Exception ex)
+        catch (Exception ex) { ShowAlert($"Failed: {ex.Message}", "danger"); }
+    }
+
+    private async Task HandleCreateBeneficiary()
+    {
+        if (string.IsNullOrWhiteSpace(bNickname))
         {
-            message = "Failed to create wallet.";
-            isSuccess = false;
+            ShowAlert("Please enter a nickname.", "danger");
+            return;
         }
+        if (!Guid.TryParse(bWalletId, out var walletId))
+        {
+            ShowAlert("Please enter a valid wallet ID.", "danger");
+            return;
+        }
+        try
+        {
+            await Api.CreateBeneficiaryAsync(bNickname, walletId, bEmail);
+            ShowAlert("Beneficiary added.", "success");
+            CloseAddBeneficiaryModal();
+            await LoadBeneficiaries();
+        }
+        catch (Exception ex) { ShowAlert($"Failed: {ex.Message}", "danger"); }
+    }
+
+    private void QuickTransfer(BeneficiaryDto ben)
+    {
+        transferFromWalletId = wallets.FirstOrDefault()?.Id.ToString() ?? string.Empty;
+        transferToWalletId = ben.WalletId.ToString();
+        transferAmount = 0;
+        transferDescription = string.Empty;
+        showTransferModal = true;
+    }
+
+    private void ConfirmDeleteBeneficiary(BeneficiaryDto ben)
+    {
+        ShowConfirmation($"Remove beneficiary '{ben.Nickname}'?", async () =>
+        {
+            try
+            {
+                await Api.DeleteBeneficiaryAsync(ben.Id);
+                ShowAlert("Beneficiary removed.", "success");
+                await LoadBeneficiaries();
+            }
+            catch (Exception ex) { ShowAlert($"Failed: {ex.Message}", "danger"); }
+        });
     }
 
     private async Task Logout()
@@ -442,4 +600,21 @@
         await Auth.LogoutAsync();
         Nav.NavigateTo("/login");
     }
+
+    private string GetTypeBadgeClass(string type) => type switch
+    {
+        "Deposit" => "success",
+        "Withdrawal" => "danger",
+        "TransferIn" => "info",
+        "TransferOut" => "warning",
+        _ => ""
+    };
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Completed" => "success",
+        "Failed" => "danger",
+        "Pending" => "warning",
+        _ => ""
+    };
 }

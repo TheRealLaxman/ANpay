@@ -1,0 +1,153 @@
+@page "/customer/profile"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div style="max-width: 600px; margin: 0 auto;">
+    <h1 style="font-size: 24px; font-weight: 600; margin-bottom: 24px;">My Profile</h1>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @(isSuccess ? "alert-success" : "alert-danger")">@message</div>
+    }
+
+    <!-- Profile Info -->
+    <div class="card" style="margin-bottom: 24px;">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">Personal Information</h3>
+        <EditForm Model="profileModel" OnValidSubmit="HandleUpdateProfile">
+            <div class="form-group">
+                <label class="form-label">First Name</label>
+                <input type="text" class="form-control" @bind="profileModel.FirstName" required />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Last Name</label>
+                <input type="text" class="form-control" @bind="profileModel.LastName" required />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" value="@profile?.Email" disabled />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Phone Number</label>
+                <input type="tel" class="form-control" @bind="profileModel.PhoneNumber" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Member Since</label>
+                <input type="text" class="form-control" value="@(profile?.CreatedAt.ToString("MMMM dd, yyyy") ?? "")" disabled />
+            </div>
+            <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                @(isSaving ? "Saving..." : "Save Changes")
+            </button>
+        </EditForm>
+    </div>
+
+    <!-- Change Password -->
+    <div class="card">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">Change Password</h3>
+        <EditForm Model="passwordModel" OnValidSubmit="HandleChangePassword">
+            <div class="form-group">
+                <label class="form-label">Current Password</label>
+                <input type="password" class="form-control" @bind="passwordModel.CurrentPassword" required />
+            </div>
+            <div class="form-group">
+                <label class="form-label">New Password</label>
+                <input type="password" class="form-control" @bind="passwordModel.NewPassword" required />
+            </div>
+            <button type="submit" class="btn btn-danger" disabled="@isChangingPassword">
+                @(isChangingPassword ? "Changing..." : "Change Password")
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private UserProfile? profile;
+    private ProfileModel profileModel = new();
+    private PasswordModel passwordModel = new();
+    private string message = string.Empty;
+    private bool isSuccess = false;
+    private bool isSaving = false;
+    private bool isChangingPassword = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadProfile();
+    }
+
+    private async Task LoadProfile()
+    {
+        try
+        {
+            profile = await Api.GetProfileAsync();
+            profileModel = new ProfileModel
+            {
+                FirstName = profile.FirstName,
+                LastName = profile.LastName,
+                PhoneNumber = profile.PhoneNumber
+            };
+        }
+        catch
+        {
+            message = "Failed to load profile.";
+            isSuccess = false;
+        }
+    }
+
+    private async Task HandleUpdateProfile()
+    {
+        isSaving = true;
+        message = string.Empty;
+        try
+        {
+            profile = await Api.UpdateProfileAsync(profileModel.FirstName, profileModel.LastName, profileModel.PhoneNumber);
+            message = "Profile updated successfully!";
+            isSuccess = true;
+        }
+        catch
+        {
+            message = "Failed to update profile.";
+            isSuccess = false;
+        }
+        isSaving = false;
+    }
+
+    private async Task HandleChangePassword()
+    {
+        isChangingPassword = true;
+        message = string.Empty;
+        try
+        {
+            await Api.ChangePasswordAsync(passwordModel.CurrentPassword, passwordModel.NewPassword);
+            message = "Password changed successfully!";
+            isSuccess = true;
+            passwordModel = new PasswordModel();
+        }
+        catch
+        {
+            message = "Failed to change password. Check your current password.";
+            isSuccess = false;
+        }
+        isChangingPassword = false;
+    }
+
+    public class ProfileModel
+    {
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string PhoneNumber { get; set; } = string.Empty;
+    }
+
+    public class PasswordModel
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+    }
+}

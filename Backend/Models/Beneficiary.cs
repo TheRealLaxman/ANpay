@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ANpay.Api.Models;
 
-public class Wallet
+public class Beneficiary
 {
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -16,20 +16,18 @@ public class Wallet
 
     [Required]
     [MaxLength(100)]
-    public string WalletName { get; set; } = string.Empty;
+    public string Nickname { get; set; } = string.Empty;
 
-    [Column(TypeName = "decimal(18,2)")]
-    public decimal Balance { get; set; } = 0;
+    [Required]
+    public Guid WalletId { get; set; }
 
-    [MaxLength(3)]
-    public string Currency { get; set; } = "USD";
+    [ForeignKey("WalletId")]
+    public Wallet Wallet { get; set; } = null!;
+
+    [MaxLength(200)]
+    public string? Email { get; set; }
 
     public bool IsActive { get; set; } = true;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-    [Timestamp]
-    public byte[] RowVersion { get; set; } = null!;
-
-    public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

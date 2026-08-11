@@ -14,6 +14,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Wallet> Wallets { get; set; }
     public DbSet<Transaction> Transactions { get; set; }
     public DbSet<Branch> Branches { get; set; }
+    public DbSet<Beneficiary> Beneficiaries { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -28,6 +29,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(w => w.UserId);
             entity.HasIndex(w => new { w.UserId, w.Currency });
+            entity.Property(w => w.RowVersion).IsRowVersion();
         });
 
         builder.Entity<Transaction>(entity =>
@@ -45,6 +47,21 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(t => t.WalletId);
             entity.HasIndex(t => t.CreatedAt);
             entity.HasIndex(t => t.ReferenceNumber);
+        });
+
+        builder.Entity<Beneficiary>(entity =>
+        {
+            entity.HasOne(b => b.User)
+                .WithMany()
+                .HasForeignKey(b => b.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(b => b.Wallet)
+                .WithMany()
+                .HasForeignKey(b => b.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(b => b.UserId);
         });
     }
 }

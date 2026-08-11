@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ANpay.Api.Data;
+using ANpay.Api.Middleware;
 using ANpay.Api.Models;
 using ANpay.Api.Services;
 using ANpay.Api.Components.Services;
@@ -47,6 +48,7 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<WalletService>();
 builder.Services.AddScoped<TransactionService>();
+builder.Services.AddScoped<BeneficiaryService>();
 
 // Blazor Server Services
 builder.Services.AddRazorComponents()
@@ -98,6 +100,9 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Global exception handling middleware (first in pipeline)
+app.UseMiddleware<GlobalExceptionMiddleware>();
 
 // Seed roles and SuperAdmin
 using (var scope = app.Services.CreateScope())

@@ -71,7 +71,7 @@
 
             if (result.Success)
             {
-                await Auth.LoginAsync(result.Token, result.UserId, result.Email, result.Role, "", "");
+                await Auth.LoginAsync(result.Token, result.UserId, result.Email, result.Role, result.FirstName, result.LastName);
                 RedirectByRole();
             }
             else
@@ -79,7 +79,7 @@
                 errorMessage = result.Message;
             }
         }
-        catch (Exception ex)
+        catch
         {
             errorMessage = "Connection error. Please try again.";
         }

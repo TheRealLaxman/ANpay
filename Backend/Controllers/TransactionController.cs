@@ -12,10 +12,12 @@ namespace ANpay.Api.Controllers;
 public class TransactionController : ControllerBase
 {
     private readonly TransactionService _transactionService;
+    private readonly ILogger<TransactionController> _logger;
 
-    public TransactionController(TransactionService transactionService)
+    public TransactionController(TransactionService transactionService, ILogger<TransactionController> logger)
     {
         _transactionService = transactionService;
+        _logger = logger;
     }
 
     [HttpGet("wallet/{walletId}")]
@@ -24,31 +26,26 @@ public class TransactionController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
-        try
-        {
-            var userId = GetUserId();
-            var history = await _transactionService.GetTransactionHistoryAsync(
-                walletId, userId, page, pageSize);
-            return Ok(history);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+        var history = await _transactionService.GetTransactionHistoryAsync(
+            walletId, userId, page, pageSize);
+        return Ok(history);
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<TransactionDto>> GetTransaction(Guid id)
     {
         var userId = GetUserId();
+        if (userId == null) return Unauthorized();
         var transaction = await _transactionService.GetTransactionByIdAsync(id, userId);
         if (transaction == null)
             return NotFound();
         return Ok(transaction);
     }
 
-    private string GetUserId()
+    private string? GetUserId()
     {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        return User.FindFirstValue(ClaimTypes.NameIdentifier);
     }
 }

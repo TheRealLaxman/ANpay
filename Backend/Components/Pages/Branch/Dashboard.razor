@@ -1,0 +1,43 @@
+@page "/branch/dashboard"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Branch Dashboard</h1>
+            <p>Welcome, @Auth.GetDisplayName()</p>
+        </div>
+        <div class="header-right">
+            <button class="btn btn-outline" @onclick="Logout">Logout</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">Branch Management</h3>
+        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login");
+    }
+}

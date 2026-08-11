@@ -23,9 +23,6 @@
             <a href="/admin/transactions" class="nav-item @(Nav.Uri.Contains("/admin/transactions") ? "active" : "")">
                 Transactions
             </a>
-            <a href="/admin/settings" class="nav-item @(Nav.Uri.Contains("/admin/settings") ? "active" : "")">
-                Settings
-            </a>
         }
         else if (Auth.IsBranchAdmin())
         {
@@ -53,21 +50,24 @@
             <a href="/customer/dashboard" class="nav-item @(Nav.Uri.Contains("/customer/dashboard") ? "active" : "")">
                 Dashboard
             </a>
-            <a href="/customer/wallets" class="nav-item @(Nav.Uri.Contains("/customer/wallets") ? "active" : "")">
-                My Wallets
-            </a>
-            <a href="/customer/transfer" class="nav-item @(Nav.Uri.Contains("/customer/transfer") ? "active" : "")">
-                Transfer
-            </a>
-            <a href="/customer/transactions" class="nav-item @(Nav.Uri.Contains("/customer/transactions") ? "active" : "")">
-                Transaction History
+            <a href="/customer/profile" class="nav-item @(Nav.Uri.Contains("/customer/profile") ? "active" : "")">
+                Profile
             </a>
         }
+
+        <div style="border-top: 1px solid var(--border-color); margin-top: auto; padding-top: 12px;">
+            <a href="/" class="nav-item">
+                Home
+            </a>
+        </div>
     </nav>
 }
 else
 {
     <nav class="nav-menu">
+        <a href="/" class="nav-item @(Nav.Uri == "/" || Nav.Uri.EndsWith("/") ? "active" : "")">
+            Home
+        </a>
         <a href="/login" class="nav-item @(Nav.Uri.Contains("/login") ? "active" : "")">
             Sign In
         </a>

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ANpay.Api.Data;
 using ANpay.Api.DTOs;
+using ANpay.Api.Exceptions;
 using ANpay.Api.Models;
 
 namespace ANpay.Api.Services;
@@ -8,10 +9,12 @@ namespace ANpay.Api.Services;
 public class TransactionService
 {
     private readonly ApplicationDbContext _context;
+    private readonly ILogger<TransactionService> _logger;
 
-    public TransactionService(ApplicationDbContext context)
+    public TransactionService(ApplicationDbContext context, ILogger<TransactionService> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     public async Task<TransactionHistoryDto> GetTransactionHistoryAsync(
@@ -20,11 +23,14 @@ public class TransactionService
         int page = 1,
         int pageSize = 20)
     {
+        _logger.LogInformation("Fetching transaction history for wallet {WalletId}, page {Page}",
+            walletId, page);
+
         var wallet = await _context.Wallets
             .FirstOrDefaultAsync(w => w.Id == walletId && w.UserId == userId);
 
         if (wallet == null)
-            throw new Exception("Wallet not found");
+            throw new NotFoundException("Wallet not found");
 
         var query = _context.Transactions
             .Where(t => t.WalletId == walletId)

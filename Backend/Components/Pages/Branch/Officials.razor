@@ -1,0 +1,36 @@
+@page "/branch/officials"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Official Management</h1>
+            <p>Manage officials in your branch</p>
+        </div>
+        <div class="header-right">
+            <a href="/branch/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+            Nav.NavigateTo("/login");
+    }
+}

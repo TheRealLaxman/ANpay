@@ -1,0 +1,36 @@
+@page "/admin/transactions"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Transaction Overview</h1>
+            <p>View all transactions across the system</p>
+        </div>
+        <div class="header-right">
+            <a href="/admin/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <p style="color: var(--text-secondary);">This feature is coming soon.</p>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+            Nav.NavigateTo("/login");
+    }
+}

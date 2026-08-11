@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ANpay.Api.Data;
 using ANpay.Api.DTOs;
+using ANpay.Api.Exceptions;
 using ANpay.Api.Models;
 
 namespace ANpay.Api.Services;
@@ -8,14 +9,18 @@ namespace ANpay.Api.Services;
 public class WalletService
 {
     private readonly ApplicationDbContext _context;
+    private readonly ILogger<WalletService> _logger;
 
-    public WalletService(ApplicationDbContext context)
+    public WalletService(ApplicationDbContext context, ILogger<WalletService> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     public async Task<WalletDto> CreateWalletAsync(string userId, CreateWalletDto dto)
     {
+        _logger.LogInformation("Creating wallet '{Name}' for user {UserId}", dto.WalletName, userId);
+
         var wallet = new Wallet
         {
             UserId = userId,
@@ -26,6 +31,8 @@ public class WalletService
 
         _context.Wallets.Add(wallet);
         await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Wallet {WalletId} created for user {UserId}", wallet.Id, userId);
 
         return new WalletDto
         {
@@ -71,135 +78,180 @@ public class WalletService
 
     public async Task<TransactionDto> DepositAsync(string userId, DepositDto dto)
     {
-        var wallet = await _context.Wallets
-            .FirstOrDefaultAsync(w => w.Id == dto.WalletId && w.UserId == userId);
+        _logger.LogInformation("Deposit of {Amount} to wallet {WalletId} by user {UserId}",
+            dto.Amount, dto.WalletId, userId);
 
-        if (wallet == null)
-            throw new Exception("Wallet not found");
-
-        if (dto.Amount <= 0)
-            throw new Exception("Amount must be greater than zero");
-
-        var balanceBefore = wallet.Balance;
-        wallet.Balance += dto.Amount;
-
-        var transaction = new Transaction
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            WalletId = wallet.Id,
-            Type = TransactionType.Deposit,
-            Amount = dto.Amount,
-            BalanceBefore = balanceBefore,
-            BalanceAfter = wallet.Balance,
-            Description = dto.Description,
-            ReferenceNumber = GenerateReferenceNumber(),
-            Status = TransactionStatus.Completed
-        };
+            var wallet = await _context.Wallets
+                .FirstOrDefaultAsync(w => w.Id == dto.WalletId && w.UserId == userId);
 
-        _context.Transactions.Add(transaction);
-        await _context.SaveChangesAsync();
+            if (wallet == null)
+                throw new NotFoundException("Wallet not found");
 
-        return MapToTransactionDto(transaction);
+            if (dto.Amount <= 0)
+                throw new ValidationException("Amount must be greater than zero");
+
+            var balanceBefore = wallet.Balance;
+            wallet.Balance += dto.Amount;
+
+            var txRecord = new Transaction
+            {
+                WalletId = wallet.Id,
+                Type = TransactionType.Deposit,
+                Amount = dto.Amount,
+                BalanceBefore = balanceBefore,
+                BalanceAfter = wallet.Balance,
+                Description = dto.Description,
+                ReferenceNumber = GenerateReferenceNumber(),
+                Status = TransactionStatus.Completed
+            };
+
+            _context.Transactions.Add(txRecord);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation("Deposit completed. Ref: {Ref}", txRecord.ReferenceNumber);
+
+            return MapToTransactionDto(txRecord);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<TransactionDto> WithdrawAsync(string userId, WithdrawDto dto)
     {
-        var wallet = await _context.Wallets
-            .FirstOrDefaultAsync(w => w.Id == dto.WalletId && w.UserId == userId);
+        _logger.LogInformation("Withdrawal of {Amount} from wallet {WalletId} by user {UserId}",
+            dto.Amount, dto.WalletId, userId);
 
-        if (wallet == null)
-            throw new Exception("Wallet not found");
-
-        if (dto.Amount <= 0)
-            throw new Exception("Amount must be greater than zero");
-
-        if (wallet.Balance < dto.Amount)
-            throw new Exception("Insufficient balance");
-
-        var balanceBefore = wallet.Balance;
-        wallet.Balance -= dto.Amount;
-
-        var transaction = new Transaction
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            WalletId = wallet.Id,
-            Type = TransactionType.Withdrawal,
-            Amount = dto.Amount,
-            BalanceBefore = balanceBefore,
-            BalanceAfter = wallet.Balance,
-            Description = dto.Description,
-            ReferenceNumber = GenerateReferenceNumber(),
-            Status = TransactionStatus.Completed
-        };
+            var wallet = await _context.Wallets
+                .FirstOrDefaultAsync(w => w.Id == dto.WalletId && w.UserId == userId);
 
-        _context.Transactions.Add(transaction);
-        await _context.SaveChangesAsync();
+            if (wallet == null)
+                throw new NotFoundException("Wallet not found");
 
-        return MapToTransactionDto(transaction);
+            if (dto.Amount <= 0)
+                throw new ValidationException("Amount must be greater than zero");
+
+            if (wallet.Balance < dto.Amount)
+                throw new ValidationException("Insufficient balance");
+
+            var balanceBefore = wallet.Balance;
+            wallet.Balance -= dto.Amount;
+
+            var txRecord = new Transaction
+            {
+                WalletId = wallet.Id,
+                Type = TransactionType.Withdrawal,
+                Amount = dto.Amount,
+                BalanceBefore = balanceBefore,
+                BalanceAfter = wallet.Balance,
+                Description = dto.Description,
+                ReferenceNumber = GenerateReferenceNumber(),
+                Status = TransactionStatus.Completed
+            };
+
+            _context.Transactions.Add(txRecord);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation("Withdrawal completed. Ref: {Ref}", txRecord.ReferenceNumber);
+
+            return MapToTransactionDto(txRecord);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<TransactionDto> TransferAsync(string userId, TransferDto dto)
     {
+        _logger.LogInformation("Transfer of {Amount} from {Src} to {Dest} by user {UserId}",
+            dto.Amount, dto.SourceWalletId, dto.DestinationWalletId, userId);
+
         if (dto.SourceWalletId == dto.DestinationWalletId)
-            throw new Exception("Cannot transfer to the same wallet");
+            throw new ValidationException("Cannot transfer to the same wallet");
 
         if (dto.Amount <= 0)
-            throw new Exception("Amount must be greater than zero");
+            throw new ValidationException("Amount must be greater than zero");
 
-        var sourceWallet = await _context.Wallets
-            .FirstOrDefaultAsync(w => w.Id == dto.SourceWalletId && w.UserId == userId);
-
-        if (sourceWallet == null)
-            throw new Exception("Source wallet not found");
-
-        var destWallet = await _context.Wallets
-            .FirstOrDefaultAsync(w => w.Id == dto.DestinationWalletId);
-
-        if (destWallet == null)
-            throw new Exception("Destination wallet not found");
-
-        if (sourceWallet.Balance < dto.Amount)
-            throw new Exception("Insufficient balance");
-
-        if (sourceWallet.Currency != destWallet.Currency)
-            throw new Exception("Currency mismatch");
-
-        var sourceBalanceBefore = sourceWallet.Balance;
-        var destBalanceBefore = destWallet.Balance;
-
-        sourceWallet.Balance -= dto.Amount;
-        destWallet.Balance += dto.Amount;
-
-        var referenceNumber = GenerateReferenceNumber();
-
-        var outTransaction = new Transaction
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            WalletId = sourceWallet.Id,
-            Type = TransactionType.TransferOut,
-            Amount = dto.Amount,
-            BalanceBefore = sourceBalanceBefore,
-            BalanceAfter = sourceWallet.Balance,
-            Description = dto.Description,
-            ReferenceNumber = referenceNumber,
-            DestinationWalletId = destWallet.Id,
-            Status = TransactionStatus.Completed
-        };
+            var sourceWallet = await _context.Wallets
+                .FirstOrDefaultAsync(w => w.Id == dto.SourceWalletId && w.UserId == userId);
 
-        var inTransaction = new Transaction
+            if (sourceWallet == null)
+                throw new NotFoundException("Source wallet not found");
+
+            var destWallet = await _context.Wallets
+                .FirstOrDefaultAsync(w => w.Id == dto.DestinationWalletId);
+
+            if (destWallet == null)
+                throw new NotFoundException("Destination wallet not found");
+
+            if (sourceWallet.Balance < dto.Amount)
+                throw new ValidationException("Insufficient balance");
+
+            if (sourceWallet.Currency != destWallet.Currency)
+                throw new ValidationException("Currency mismatch");
+
+            var sourceBalanceBefore = sourceWallet.Balance;
+            var destBalanceBefore = destWallet.Balance;
+
+            sourceWallet.Balance -= dto.Amount;
+            destWallet.Balance += dto.Amount;
+
+            var referenceNumber = GenerateReferenceNumber();
+
+            var outTransaction = new Transaction
+            {
+                WalletId = sourceWallet.Id,
+                Type = TransactionType.TransferOut,
+                Amount = dto.Amount,
+                BalanceBefore = sourceBalanceBefore,
+                BalanceAfter = sourceWallet.Balance,
+                Description = dto.Description,
+                ReferenceNumber = referenceNumber,
+                DestinationWalletId = destWallet.Id,
+                Status = TransactionStatus.Completed
+            };
+
+            var inTransaction = new Transaction
+            {
+                WalletId = destWallet.Id,
+                Type = TransactionType.TransferIn,
+                Amount = dto.Amount,
+                BalanceBefore = destBalanceBefore,
+                BalanceAfter = destWallet.Balance,
+                Description = $"Transfer from {sourceWallet.WalletName}",
+                ReferenceNumber = referenceNumber,
+                Status = TransactionStatus.Completed
+            };
+
+            _context.Transactions.Add(outTransaction);
+            _context.Transactions.Add(inTransaction);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation("Transfer completed. Ref: {Ref}", referenceNumber);
+
+            return MapToTransactionDto(outTransaction);
+        }
+        catch
         {
-            WalletId = destWallet.Id,
-            Type = TransactionType.TransferIn,
-            Amount = dto.Amount,
-            BalanceBefore = destBalanceBefore,
-            BalanceAfter = destWallet.Balance,
-            Description = $"Transfer from {sourceWallet.WalletName}",
-            ReferenceNumber = referenceNumber,
-            Status = TransactionStatus.Completed
-        };
-
-        _context.Transactions.Add(outTransaction);
-        _context.Transactions.Add(inTransaction);
-        await _context.SaveChangesAsync();
-
-        return MapToTransactionDto(outTransaction);
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     private TransactionDto MapToTransactionDto(Transaction t)
