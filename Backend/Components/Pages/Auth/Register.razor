@@ -1,0 +1,130 @@
+@page "/register"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-logo">
+            AN<span>pay</span>
+        </div>
+        <h2 class="auth-title">Create your account</h2>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger">@errorMessage</div>
+        }
+
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <div class="alert alert-success">@successMessage</div>
+        }
+
+        <EditForm Model="registerModel" OnValidSubmit="HandleRegister">
+            <div class="form-group">
+                <label class="form-label">First Name</label>
+                <input type="text" class="form-control" @bind="registerModel.FirstName" placeholder="Enter first name" required />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Last Name</label>
+                <input type="text" class="form-control" @bind="registerModel.LastName" placeholder="Enter last name" required />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" @bind="registerModel.Email" placeholder="Enter your email" required />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Phone Number</label>
+                <input type="tel" class="form-control" @bind="registerModel.PhoneNumber" placeholder="Enter phone number" />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-control" @bind="registerModel.Password" placeholder="Create a password" required />
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%;" disabled="@isLoading">
+                @if (isLoading)
+                {
+                    <span>Creating account...</span>
+                }
+                else
+                {
+                    <span>Create Account</span>
+                }
+            </button>
+        </EditForm>
+
+        <p style="text-align: center; margin-top: 20px; color: var(--text-secondary);">
+            Already have an account? <a href="/login" class="auth-link">Sign in</a>
+        </p>
+    </div>
+</div>
+
+@code {
+    private RegisterModel registerModel = new();
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/customer/dashboard");
+        }
+    }
+
+    private async Task HandleRegister()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+
+        try
+        {
+            var request = new RegisterRequest
+            {
+                FirstName = registerModel.FirstName,
+                LastName = registerModel.LastName,
+                Email = registerModel.Email,
+                Password = registerModel.Password,
+                PhoneNumber = registerModel.PhoneNumber
+            };
+
+            var result = await Api.RegisterAsync(request);
+
+            if (result.Success)
+            {
+                successMessage = "Account created successfully! Redirecting to login...";
+                await Task.Delay(2000);
+                Nav.NavigateTo("/login");
+            }
+            else
+            {
+                errorMessage = result.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Connection error. Please try again.";
+        }
+
+        isLoading = false;
+    }
+
+    public class RegisterModel
+    {
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string PhoneNumber { get; set; } = string.Empty;
+    }
+}

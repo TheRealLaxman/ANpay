@@ -1,0 +1,45 @@
+## .NET
+bin/
+obj/
+*.exe
+*.dll
+*.pdb
+*.cache
+*.vs/
+*.user
+*.suo
+*.csproj.user
+*.sln.docstates
+
+## NuGet
+packages/
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+## OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+## Build
+[Bb]uild/
+[Ll]og/
+[Dd]ebug/
+[Rr]elease/
+
+## appsettings (uncomment if you want to exclude secrets)
+# appsettings.json
+# appsettings.Development.json
+
+## Migration files (optional - keep for reference)
+# Backend/Data/Migrations/

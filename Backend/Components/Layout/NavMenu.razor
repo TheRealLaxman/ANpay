@@ -1,0 +1,90 @@
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="logo">
+    AN<span>pay</span>
+</div>
+
+@if (Auth.IsLoggedIn)
+{
+    <nav class="nav-menu">
+        @if (Auth.IsSuperAdmin())
+        {
+            <a href="/admin/dashboard" class="nav-item @(Nav.Uri.Contains("/admin/dashboard") ? "active" : "")">
+                Dashboard
+            </a>
+            <a href="/admin/users" class="nav-item @(Nav.Uri.Contains("/admin/users") ? "active" : "")">
+                Users
+            </a>
+            <a href="/admin/branches" class="nav-item @(Nav.Uri.Contains("/admin/branches") ? "active" : "")">
+                Branches
+            </a>
+            <a href="/admin/transactions" class="nav-item @(Nav.Uri.Contains("/admin/transactions") ? "active" : "")">
+                Transactions
+            </a>
+            <a href="/admin/settings" class="nav-item @(Nav.Uri.Contains("/admin/settings") ? "active" : "")">
+                Settings
+            </a>
+        }
+        else if (Auth.IsBranchAdmin())
+        {
+            <a href="/branch/dashboard" class="nav-item @(Nav.Uri.Contains("/branch/dashboard") ? "active" : "")">
+                Dashboard
+            </a>
+            <a href="/branch/officials" class="nav-item @(Nav.Uri.Contains("/branch/officials") ? "active" : "")">
+                Officials
+            </a>
+            <a href="/branch/reports" class="nav-item @(Nav.Uri.Contains("/branch/reports") ? "active" : "")">
+                Reports
+            </a>
+        }
+        else if (Auth.IsOfficial())
+        {
+            <a href="/official/dashboard" class="nav-item @(Nav.Uri.Contains("/official/dashboard") ? "active" : "")">
+                Dashboard
+            </a>
+            <a href="/official/transactions" class="nav-item @(Nav.Uri.Contains("/official/transactions") ? "active" : "")">
+                Process Transactions
+            </a>
+        }
+        else
+        {
+            <a href="/customer/dashboard" class="nav-item @(Nav.Uri.Contains("/customer/dashboard") ? "active" : "")">
+                Dashboard
+            </a>
+            <a href="/customer/wallets" class="nav-item @(Nav.Uri.Contains("/customer/wallets") ? "active" : "")">
+                My Wallets
+            </a>
+            <a href="/customer/transfer" class="nav-item @(Nav.Uri.Contains("/customer/transfer") ? "active" : "")">
+                Transfer
+            </a>
+            <a href="/customer/transactions" class="nav-item @(Nav.Uri.Contains("/customer/transactions") ? "active" : "")">
+                Transaction History
+            </a>
+        }
+    </nav>
+}
+else
+{
+    <nav class="nav-menu">
+        <a href="/login" class="nav-item @(Nav.Uri.Contains("/login") ? "active" : "")">
+            Sign In
+        </a>
+        <a href="/register" class="nav-item @(Nav.Uri.Contains("/register") ? "active" : "")">
+            Register
+        </a>
+    </nav>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        Auth.OnChange -= StateHasChanged;
+    }
+}

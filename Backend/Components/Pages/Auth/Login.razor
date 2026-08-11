@@ -1,0 +1,107 @@
+@page "/login"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-logo">
+            AN<span>pay</span>
+        </div>
+        <h2 class="auth-title">Sign in to your account</h2>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger">@errorMessage</div>
+        }
+
+        <EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" @bind="loginModel.Email" placeholder="Enter your email" required />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-control" @bind="loginModel.Password" placeholder="Enter your password" required />
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%;" disabled="@isLoading">
+                @if (isLoading)
+                {
+                    <span>Signing in...</span>
+                }
+                else
+                {
+                    <span>Sign In</span>
+                }
+            </button>
+        </EditForm>
+
+        <p style="text-align: center; margin-top: 20px; color: var(--text-secondary);">
+            Don't have an account? <a href="/register" class="auth-link">Register</a>
+        </p>
+    </div>
+</div>
+
+@code {
+    private LoginModel loginModel = new();
+    private string errorMessage = string.Empty;
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (Auth.IsLoggedIn)
+        {
+            RedirectByRole();
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+
+        try
+        {
+            var result = await Api.LoginAsync(loginModel.Email, loginModel.Password);
+
+            if (result.Success)
+            {
+                await Auth.LoginAsync(result.Token, result.UserId, result.Email, result.Role, "", "");
+                RedirectByRole();
+            }
+            else
+            {
+                errorMessage = result.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Connection error. Please try again.";
+        }
+
+        isLoading = false;
+    }
+
+    private void RedirectByRole()
+    {
+        if (Auth.IsSuperAdmin())
+            Nav.NavigateTo("/admin/dashboard");
+        else if (Auth.IsBranchAdmin())
+            Nav.NavigateTo("/branch/dashboard");
+        else if (Auth.IsOfficial())
+            Nav.NavigateTo("/official/dashboard");
+        else
+            Nav.NavigateTo("/customer/dashboard");
+    }
+
+    public class LoginModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

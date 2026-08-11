@@ -1,0 +1,103 @@
+@page "/admin/dashboard"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div style="max-width: 1200px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <div>
+            <h1 style="font-size: 24px; font-weight: 600;">SuperAdmin Dashboard</h1>
+            <p style="color: var(--text-secondary);">System overview and management</p>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button class="btn btn-outline" @onclick="Logout">Logout</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @(isSuccess ? "alert-success" : "alert-danger")">@message</div>
+    }
+
+    <!-- Stats Cards -->
+    <div class="grid grid-4" style="margin-bottom: 24px;">
+        <div class="stat-card">
+            <div class="stat-icon white">U</div>
+            <div class="card-header">Total Users</div>
+            <div class="card-value">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon green">$</div>
+            <div class="card-header">Total Volume</div>
+            <div class="card-value">$0.00</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon red">B</div>
+            <div class="card-header">Active Branches</div>
+            <div class="card-value">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon white">T</div>
+            <div class="card-header">Transactions Today</div>
+            <div class="card-value">--</div>
+        </div>
+    </div>
+
+    <!-- Navigation Cards -->
+    <div class="grid grid-2" style="margin-bottom: 24px;">
+        <a href="/admin/users" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
+            <div class="stat-icon white" style="margin-bottom: 12px;">U</div>
+            <h3 style="font-size: 18px; margin-bottom: 8px;">User Management</h3>
+            <p style="color: var(--text-secondary); font-size: 14px;">Manage all users, roles, and permissions</p>
+        </a>
+        <a href="/admin/branches" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
+            <div class="stat-icon red" style="margin-bottom: 12px;">B</div>
+            <h3 style="font-size: 18px; margin-bottom: 8px;">Branch Management</h3>
+            <p style="color: var(--text-secondary); font-size: 14px;">Create and manage branches</p>
+        </a>
+        <a href="/admin/transactions" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
+            <div class="stat-icon green" style="margin-bottom: 12px;">T</div>
+            <h3 style="font-size: 18px; margin-bottom: 8px;">Transaction Reports</h3>
+            <p style="color: var(--text-secondary); font-size: 14px;">View all system transactions</p>
+        </a>
+        <a href="/admin/settings" class="card" style="text-decoration: none; cursor: pointer; transition: all 0.2s;">
+            <div class="stat-icon white" style="margin-bottom: 12px;">S</div>
+            <h3 style="font-size: 18px; margin-bottom: 8px;">System Settings</h3>
+            <p style="color: var(--text-secondary); font-size: 14px;">Configure system parameters</p>
+        </a>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="card">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">Recent Activity</h3>
+        <p style="color: var(--text-secondary);">No recent activity to display.</p>
+    </div>
+</div>
+
+@code {
+    private string message = string.Empty;
+    private bool isSuccess = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
+            Nav.NavigateTo("/login");
+        }
+    }
+
+    private async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login");
+    }
+}
