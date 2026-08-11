@@ -51,6 +51,7 @@ builder.Services.AddScoped<TransactionService>();
 // Blazor Server Services
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddHttpClient<ApiService>();
 builder.Services.AddScoped<AuthState>();
 
 // Controllers
