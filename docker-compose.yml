@@ -9,9 +9,11 @@ services:
       - "5000:5000"
     depends_on:
       - db
+      - redis
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=db;Database=ANpayDb;User=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True
+      - ConnectionStrings__Redis=redis:6379
     networks:
       - anpay-network
 
@@ -27,8 +29,19 @@ services:
     networks:
       - anpay-network
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - anpay-network
+
 volumes:
   sqlserver-data:
+    driver: local
+  redis-data:
     driver: local
 
 networks:

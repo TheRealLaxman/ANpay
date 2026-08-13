@@ -2,30 +2,37 @@ name: Build and Test
 
 on:
   push:
-    branches: [PHASE-I, main]
+    branches: [ main, PHASE-I ]
   pull_request:
-    branches: [PHASE-I, main]
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
 
-      - name: Restore dependencies
-        run: dotnet restore
+    - name: Restore dependencies
+      run: dotnet restore Backend/ANpay.Api.csproj
 
-      - name: Build
-        run: dotnet build --no-restore --configuration Release
+    - name: Build
+      run: dotnet build Backend/ANpay.Api.csproj --no-restore --configuration Release
 
-      - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal
+    - name: Test
+      run: dotnet test Tests/ANpay.Api.Tests.csproj --configuration Release --verbosity normal
 
-      - name: Build Docker image
-        run: docker build -t anpay-api:${{ github.sha }} .
+    - name: Publish
+      run: dotnet publish Backend/ANpay.Api.csproj --no-build --configuration Release --output ./publish
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: api-publish
+        path: ./publish
+        retention-days: 7

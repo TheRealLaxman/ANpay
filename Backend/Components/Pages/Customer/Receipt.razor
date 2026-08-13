@@ -1,0 +1,128 @@
+@page "/customer/receipt/{TransactionId}"
+@using Microsoft.AspNetCore.Authorization
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@attribute [Authorize(Roles = "Customer")]
+
+<div class="page-container">
+    <div class="receipt-container">
+        @if (loading)
+        {
+            <div class="loading-state">Loading receipt...</div>
+        }
+        else if (transaction == null)
+        {
+            <div class="empty-state">Transaction not found</div>
+        }
+        else
+        {
+            <div class="receipt">
+                <div class="receipt-header">
+                    <h2>Transaction Receipt</h2>
+                    <div class="receipt-logo">ANpay</div>
+                </div>
+
+                <div class="receipt-status">
+                    <span class="badge badge-@GetStatusClass(transaction.Status)">@transaction.Status</span>
+                </div>
+
+                <div class="receipt-details">
+                    <div class="receipt-row">
+                        <span class="label">Transaction ID</span>
+                        <span class="value">@transaction.Id.ToString("N")[..12].ToUpper()</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span class="label">Reference</span>
+                        <span class="value">@transaction.ReferenceNumber</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span class="label">Type</span>
+                        <span class="value">@transaction.Type</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span class="label">Amount</span>
+                        <span class="value amount">$@transaction.Amount.ToString("N2")</span>
+                    </div>
+                    @if (transaction.Fee > 0)
+                    {
+                        <div class="receipt-row">
+                            <span class="label">Fee</span>
+                            <span class="value">$@transaction.Fee.ToString("N2")</span>
+                        </div>
+                    }
+                    <div class="receipt-row">
+                        <span class="label">Total</span>
+                        <span class="value amount">$@(transaction.Amount + transaction.Fee).ToString("N2")</span>
+                    </div>
+                    <div class="receipt-divider"></div>
+                    <div class="receipt-row">
+                        <span class="label">Balance Before</span>
+                        <span class="value">$@transaction.BalanceBefore.ToString("N2")</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span class="label">Balance After</span>
+                        <span class="value">$@transaction.BalanceAfter.ToString("N2")</span>
+                    </div>
+                    <div class="receipt-divider"></div>
+                    <div class="receipt-row">
+                        <span class="label">Description</span>
+                        <span class="value">@transaction.Description</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span class="label">Channel</span>
+                        <span class="value">@transaction.Channel</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span class="label">Date & Time</span>
+                        <span class="value">@transaction.CreatedAt.ToString("MMM dd, yyyy HH:mm:ss")</span>
+                    </div>
+                </div>
+
+                <div class="receipt-footer">
+                    <p>ANpay Digital Wallet - Secure Transaction</p>
+                    <p>This is a computer-generated receipt.</p>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string TransactionId { get; set; } = "";
+
+    private bool loading = true;
+    private TransactionDto? transaction;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            transaction = await Api.GetAsync<TransactionDto>($"api/transaction/{TransactionId}");
+        }
+        catch { }
+        finally { loading = false; }
+    }
+
+    private string GetStatusClass(string status) => status switch
+    {
+        "Completed" => "success",
+        "Pending" or "Processing" => "warning",
+        "Failed" or "Cancelled" => "danger",
+        _ => "info"
+    };
+
+    public class TransactionDto
+    {
+        public Guid Id { get; set; }
+        public string Type { get; set; } = "";
+        public decimal Amount { get; set; }
+        public decimal BalanceBefore { get; set; }
+        public decimal BalanceAfter { get; set; }
+        public decimal Fee { get; set; }
+        public string Description { get; set; } = "";
+        public string? ReferenceNumber { get; set; }
+        public string Status { get; set; } = "";
+        public string Channel { get; set; } = "App";
+        public DateTime CreatedAt { get; set; }
+    }
+}

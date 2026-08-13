@@ -37,5 +37,11 @@ public class AuditLog
     [MaxLength(500)]
     public string ErrorMessage { get; set; } = string.Empty;
 
+    [MaxLength(128)]
+    public string? Hash { get; set; }
+
+    [MaxLength(128)]
+    public string? PreviousHash { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

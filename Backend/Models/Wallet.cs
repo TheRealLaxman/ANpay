@@ -21,6 +21,15 @@ public class Wallet
     [Column(TypeName = "decimal(18,2)")]
     public decimal Balance { get; set; } = 0;
 
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal PendingBalance { get; set; } = 0;
+
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal FrozenBalance { get; set; } = 0;
+
+    [NotMapped]
+    public decimal AvailableBalance => Balance - FrozenBalance;
+
     [MaxLength(3)]
     public string Currency { get; set; } = "USD";
 

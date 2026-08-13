@@ -18,6 +18,9 @@ public class WalletDto
     public Guid Id { get; set; }
     public string WalletName { get; set; } = string.Empty;
     public decimal Balance { get; set; }
+    public decimal PendingBalance { get; set; }
+    public decimal FrozenBalance { get; set; }
+    public decimal AvailableBalance { get; set; }
     public string Currency { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
 }

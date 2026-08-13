@@ -1,0 +1,107 @@
+@page "/branch/customers"
+@using Microsoft.AspNetCore.Authorization
+@using ANpay.Api.Components.Services
+@using ANpay.Api.Models
+@inject ApiService Api
+@attribute [Authorize(Roles = "SuperAdmin,MainBranchAdmin,BranchAdmin")]
+
+<div class="page-container">
+    <div class="page-header">
+        <h1>Branch Customers</h1>
+    </div>
+
+    @if (loading)
+    {
+        <div class="loading-state">Loading customers...</div>
+    }
+    else
+    {
+        <div class="search-bar">
+            <input type="text" class="form-control" placeholder="Search by name or email..."
+                   @bind="searchTerm" @bind:event="oninput" @onkeyup="FilterCustomers" />
+        </div>
+
+        <div class="card" style="margin-top: 16px;">
+            <div class="card-body">
+                @if (filteredCustomers.Any())
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                <th>Wallets</th>
+                                <th>Total Balance</th>
+                                <th>Joined</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in filteredCustomers)
+                            {
+                                <tr>
+                                    <td>@c.FirstName @c.LastName</td>
+                                    <td>@c.Email</td>
+                                    <td>@c.PhoneNumber</td>
+                                    <td>@c.WalletCount</td>
+                                    <td>$@c.TotalBalance.ToString("N2")</td>
+                                    <td>@c.CreatedAt.ToString("MMM dd, yyyy")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <div class="empty-state">No customers found</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool loading = true;
+    private List<BranchCustomerDto> customers = new();
+    private List<BranchCustomerDto> filteredCustomers = new();
+    private string searchTerm = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            customers = await Api.GetAsync<List<BranchCustomerDto>>("api/branch/customers") ?? new();
+            filteredCustomers = customers;
+        }
+        catch { }
+        finally { loading = false; }
+    }
+
+    private void FilterCustomers()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            filteredCustomers = customers;
+        }
+        else
+        {
+            var term = searchTerm.ToLower();
+            filteredCustomers = customers.Where(c =>
+                c.FirstName.ToLower().Contains(term) ||
+                c.LastName.ToLower().Contains(term) ||
+                c.Email.ToLower().Contains(term))
+                .ToList();
+        }
+    }
+
+    public class BranchCustomerDto
+    {
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string? PhoneNumber { get; set; }
+        public int WalletCount { get; set; }
+        public decimal TotalBalance { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+}

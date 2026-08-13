@@ -20,6 +20,15 @@ public class ApiService
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
 
+    public async Task<T?> GetAsync<T>(string endpoint)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<T>($"{_baseUrl}/{endpoint.TrimStart('/')}");
+        }
+        catch { return default; }
+    }
+
     // Auth
     public async Task<AuthResponse> LoginAsync(string email, string password)
     {
@@ -409,6 +418,30 @@ public class ApiService
     {
         return await _http.GetFromJsonAsync<List<LoginHistoryDto>>($"{_baseUrl}/profile/login-history") ?? new();
     }
+
+    // 2FA
+    public async Task<TwoFactorSetupDto> Setup2FAAsync()
+    {
+        var result = await _http.PostAsJsonAsync($"{_baseUrl}/profile/2fa/setup", new { });
+        var content = await result.Content.ReadFromJsonAsync<TwoFactorSetupDto>();
+        return content!;
+    }
+
+    public async Task VerifyAndEnable2FAAsync(string code)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/profile/2fa/verify-enable", new { code });
+    }
+
+    public async Task Disable2FAAsync()
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/profile/2fa/disable", new { });
+    }
+}
+
+public class TwoFactorSetupDto
+{
+    public string QrCodeUrl { get; set; } = "";
+    public string ManualEntryKey { get; set; } = "";
 }
 
 // New DTOs

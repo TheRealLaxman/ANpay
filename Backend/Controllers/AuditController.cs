@@ -24,4 +24,12 @@ public class AuditController : ControllerBase
         var logs = await _auditService.GetAsync(userId, action, from, to, skip, take);
         return Ok(logs);
     }
+
+    [HttpGet("verify-integrity")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> VerifyIntegrity()
+    {
+        var isValid = await _auditService.VerifyIntegrityAsync();
+        return Ok(new { success = true, data = new { isValid, message = isValid ? "Audit log integrity verified" : "Integrity breach detected" } });
+    }
 }

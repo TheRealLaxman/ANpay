@@ -42,6 +42,49 @@
         </EditForm>
     </div>
 
+    <!-- Two-Factor Authentication -->
+    <div class="card" style="margin-bottom:24px;">
+        <h3 style="font-size:16px; margin-bottom:16px;">Two-Factor Authentication</h3>
+        @if (twoFactorEnabled)
+        {
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+                <span class="badge badge-success">Enabled</span>
+                <span style="color:var(--text-secondary); font-size:13px;">Your account is protected with 2FA</span>
+            </div>
+            <button class="btn btn-outline" @onclick="Disable2FA" disabled="@isToggling2FA">
+                @(isToggling2FA ? "Processing..." : "Disable 2FA")
+            </button>
+        }
+        else
+        {
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+                <span class="badge badge-warning">Disabled</span>
+                <span style="color:var(--text-secondary); font-size:13px;">Add an extra layer of security to your account</span>
+            </div>
+            @if (qrCodeUrl != null)
+            {
+                <div style="text-align:center; margin-bottom:16px;">
+                    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">Scan this QR code with your authenticator app:</p>
+                    <img src="@qrCodeUrl" alt="2FA QR Code" style="width:200px; height:200px; border:1px solid var(--border-color); border-radius:8px;" />
+                    <p style="font-size:12px; color:var(--text-secondary); margin-top:8px;">Or enter manually: <code style="font-size:11px;">@manualEntryKey</code></p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Enter verification code</label>
+                    <input type="text" class="form-control" @bind="verificationCode" placeholder="6-digit code" maxlength="6" />
+                </div>
+                <button class="btn btn-primary" @onclick="VerifyAndEnable2FA" disabled="@(isToggling2FA || string.IsNullOrEmpty(verificationCode))">
+                    @(isToggling2FA ? "Verifying..." : "Verify & Enable")
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-primary" @onclick="Setup2FA" disabled="@isToggling2FA">
+                    @(isToggling2FA ? "Setting up..." : "Enable 2FA")
+                </button>
+            }
+        }
+    </div>
+
     <!-- Active Devices -->
     <div class="card" style="margin-bottom:24px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -152,11 +195,16 @@
     private bool loadingDevices = true;
     private bool loadingHistory = true;
     private bool isChangingPassword = false;
+    private bool isToggling2FA = false;
 
     private string alertMessage = string.Empty;
     private bool alertSuccess = true;
 
     private PasswordChangeModel passwordModel = new();
+    private bool twoFactorEnabled = false;
+    private string? qrCodeUrl;
+    private string? manualEntryKey;
+    private string? verificationCode;
 
     protected override async Task OnInitializedAsync()
     {
@@ -243,6 +291,59 @@
         {
             ShowAlert($"Failed to revoke device: {ex.Message}", false);
         }
+    }
+
+    private async Task Setup2FA()
+    {
+        isToggling2FA = true;
+        try
+        {
+            var result = await Api.Setup2FAAsync();
+            qrCodeUrl = result.QrCodeUrl;
+            manualEntryKey = result.ManualEntryKey;
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to setup 2FA: {ex.Message}", false);
+        }
+        isToggling2FA = false;
+    }
+
+    private async Task VerifyAndEnable2FA()
+    {
+        if (string.IsNullOrEmpty(verificationCode)) return;
+
+        isToggling2FA = true;
+        try
+        {
+            await Api.VerifyAndEnable2FAAsync(verificationCode);
+            twoFactorEnabled = true;
+            qrCodeUrl = null;
+            manualEntryKey = null;
+            verificationCode = null;
+            ShowAlert("2FA enabled successfully!", true);
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to verify 2FA: {ex.Message}", false);
+        }
+        isToggling2FA = false;
+    }
+
+    private async Task Disable2FA()
+    {
+        isToggling2FA = true;
+        try
+        {
+            await Api.Disable2FAAsync();
+            twoFactorEnabled = false;
+            ShowAlert("2FA disabled.", true);
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to disable 2FA: {ex.Message}", false);
+        }
+        isToggling2FA = false;
     }
 
     private void ShowAlert(string message, bool success)

@@ -41,6 +41,9 @@ public class WalletService
             Id = wallet.Id,
             WalletName = wallet.WalletName,
             Balance = wallet.Balance,
+            PendingBalance = wallet.PendingBalance,
+            FrozenBalance = wallet.FrozenBalance,
+            AvailableBalance = wallet.AvailableBalance,
             Currency = wallet.Currency,
             CreatedAt = wallet.CreatedAt
         };
@@ -55,6 +58,9 @@ public class WalletService
                 Id = w.Id,
                 WalletName = w.WalletName,
                 Balance = w.Balance,
+                PendingBalance = w.PendingBalance,
+                FrozenBalance = w.FrozenBalance,
+                AvailableBalance = w.AvailableBalance,
                 Currency = w.Currency,
                 CreatedAt = w.CreatedAt
             })
@@ -73,6 +79,9 @@ public class WalletService
             Id = wallet.Id,
             WalletName = wallet.WalletName,
             Balance = wallet.Balance,
+            PendingBalance = wallet.PendingBalance,
+            FrozenBalance = wallet.FrozenBalance,
+            AvailableBalance = wallet.AvailableBalance,
             Currency = wallet.Currency,
             CreatedAt = wallet.CreatedAt
         };
@@ -295,6 +304,11 @@ public class WalletService
             Amount = t.Amount,
             BalanceBefore = t.BalanceBefore,
             BalanceAfter = t.BalanceAfter,
+            Fee = t.Fee,
+            ExchangeRate = t.ExchangeRate,
+            Channel = t.Channel,
+            BranchId = t.BranchId,
+            EmployeeId = t.EmployeeId,
             Description = t.Description,
             ReferenceNumber = t.ReferenceNumber,
             Status = t.Status.ToString(),

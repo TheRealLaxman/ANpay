@@ -38,7 +38,24 @@ public class Transaction
     public Wallet? DestinationWallet { get; set; }
     
     public TransactionStatus Status { get; set; } = TransactionStatus.Completed;
-    
+
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal Fee { get; set; } = 0;
+
+    [Column(TypeName = "decimal(18,6)")]
+    public decimal? ExchangeRate { get; set; }
+
+    [MaxLength(20)]
+    public string Channel { get; set; } = "App";
+
+    public Guid? BranchId { get; set; }
+
+    [MaxLength(100)]
+    public string? EmployeeId { get; set; }
+
+    [MaxLength(200)]
+    public string? AuthorizationInfo { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -62,4 +79,13 @@ public enum TransactionStatus
     Cancelled = 5,
     Reversed = 6,
     Refunded = 7
+}
+
+public enum TransactionChannel
+{
+    App = 0,
+    Web = 1,
+    API = 2,
+    Branch = 3,
+    USSD = 4
 }

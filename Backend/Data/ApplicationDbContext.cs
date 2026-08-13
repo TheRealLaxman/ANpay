@@ -46,6 +46,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<LoginHistory> LoginHistories { get; set; }
     public DbSet<TrustedDevice> TrustedDevices { get; set; }
     public DbSet<IdempotencyKey> IdempotencyKeys { get; set; }
+    public DbSet<ReconciliationRecord> ReconciliationRecords { get; set; }
+    public DbSet<ReconciliationTransaction> ReconciliationTransactions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -80,6 +82,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(t => t.WalletId);
             entity.HasIndex(t => t.CreatedAt);
             entity.HasIndex(t => t.ReferenceNumber);
+            entity.HasIndex(t => t.Channel);
+            entity.HasIndex(t => t.BranchId);
         });
 
         // Beneficiary
@@ -461,6 +465,26 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(ik => new { ik.Key, ik.UserId }).IsUnique();
             entity.HasIndex(ik => ik.ExpiresAt);
             entity.HasIndex(ik => ik.UserId);
+        });
+
+        // ReconciliationRecord
+        builder.Entity<ReconciliationRecord>(entity =>
+        {
+            entity.HasIndex(r => r.Type);
+            entity.HasIndex(r => r.Status);
+            entity.HasIndex(r => r.CreatedAt);
+        });
+
+        // ReconciliationTransaction
+        builder.Entity<ReconciliationTransaction>(entity =>
+        {
+            entity.HasOne(rt => rt.ReconciliationRecord)
+                .WithMany(r => r.ReconciliationTransactions)
+                .HasForeignKey(rt => rt.ReconciliationRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(rt => rt.ReconciliationRecordId);
+            entity.HasIndex(rt => rt.TransactionId);
         });
     }
 }

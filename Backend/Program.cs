@@ -18,6 +18,21 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Redis Cache
+var redisConnection = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrEmpty(redisConnection))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnection;
+        options.InstanceName = "ANpay_";
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+
 // Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
@@ -82,8 +97,10 @@ builder.Services.AddScoped<CashService>();
 builder.Services.AddScoped<CryptoService>();
 builder.Services.AddScoped<MerchantService>();
 builder.Services.AddScoped<QrPaymentService>();
+builder.Services.AddScoped<CacheService>();
 builder.Services.AddScoped<DisputeService>();
 builder.Services.AddScoped<FraudService>();
+builder.Services.AddScoped<ReconciliationService>();
 builder.Services.AddScoped<SystemSettingService>();
 builder.Services.AddSingleton<IEmailService, ConsoleEmailService>();
 builder.Services.AddSingleton<ISmsService, ConsoleSmsService>();
