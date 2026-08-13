@@ -8,6 +8,7 @@ using ANpay.Api.Data;
 using ANpay.Api.Middleware;
 using ANpay.Api.Models;
 using ANpay.Api.Services;
+using ANpay.Api.Services.PaymentGateway;
 using ANpay.Api.Hubs;
 using ANpay.Api.Components.Services;
 
@@ -87,6 +88,13 @@ builder.Services.AddScoped<SystemSettingService>();
 builder.Services.AddSingleton<IEmailService, ConsoleEmailService>();
 builder.Services.AddSingleton<ISmsService, ConsoleSmsService>();
 
+// Payment Gateway Services
+builder.Services.AddSingleton<IPaymentGateway, MockPaymentGateway>();
+builder.Services.AddScoped<PaymentGatewayService>();
+
+// Market Data Service
+builder.Services.AddHttpClient<MarketDataService>();
+
 // SignalR
 builder.Services.AddSignalR();
 
@@ -143,6 +151,12 @@ var app = builder.Build();
 
 // Global exception handling middleware (first in pipeline)
 app.UseMiddleware<GlobalExceptionMiddleware>();
+
+// Rate limiting middleware
+app.UseMiddleware<RateLimitingMiddleware>();
+
+// Account lockout middleware
+app.UseMiddleware<AccountLockoutMiddleware>();
 
 // Seed roles, admin, permissions, ledger, limits
 using (var scope = app.Services.CreateScope())

@@ -100,6 +100,104 @@ public class ReportService
             })
             .ToListAsync();
     }
+
+    public async Task<RevenueReportDto> GetRevenueReportAsync(DateTime from, DateTime to)
+    {
+        var completedTransactions = await _context.Transactions
+            .Include(t => t.Wallet)
+            .Where(t => t.CreatedAt >= from && t.CreatedAt <= to && t.Status == TransactionStatus.Completed)
+            .ToListAsync();
+
+        var totalTransactions = completedTransactions.Count;
+
+        var totalFeesCollected = completedTransactions
+            .Where(t => t.Type == TransactionType.Withdrawal || t.Type == TransactionType.TransferOut || t.Type == TransactionType.Payment)
+            .Sum(t => t.Amount);
+
+        var exchangeVolume = completedTransactions
+            .Where(t => t.Type == TransactionType.Deposit || t.Type == TransactionType.TransferIn)
+            .Sum(t => t.Amount);
+
+        var averageTransactionAmount = totalTransactions > 0
+            ? completedTransactions.Average(t => t.Amount)
+            : 0m;
+
+        return new RevenueReportDto
+        {
+            From = from,
+            To = to,
+            TotalFeesCollected = totalFeesCollected,
+            ExchangeRevenue = exchangeVolume,
+            TotalTransactions = totalTransactions,
+            AverageTransactionAmount = averageTransactionAmount,
+            TotalVolume = completedTransactions.Sum(t => t.Amount)
+        };
+    }
+
+    public async Task<List<BranchComparisonReportDto>> GetBranchComparisonReportAsync()
+    {
+        var branches = await _context.Branches
+            .Include(b => b.Employees)
+            .ThenInclude(e => e.Wallets)
+            .ThenInclude(w => w.Transactions)
+            .ToListAsync();
+
+        var today = DateTime.UtcNow.Date;
+
+        return branches.Select(b => new BranchComparisonReportDto
+        {
+            BranchId = b.Id,
+            BranchName = b.Name,
+            Status = b.Status.ToString(),
+            EmployeeCount = b.Employees.Count(e => e.IsActive),
+            TotalTransactions = b.Employees
+                .SelectMany(e => e.Wallets)
+                .SelectMany(w => w.Transactions)
+                .Count(),
+            TodayTransactions = b.Employees
+                .SelectMany(e => e.Wallets)
+                .SelectMany(w => w.Transactions)
+                .Count(t => t.CreatedAt >= today),
+            TotalVolume = b.Employees
+                .SelectMany(e => e.Wallets)
+                .SelectMany(w => w.Transactions)
+                .Sum(t => t.Amount),
+            TodayVolume = b.Employees
+                .SelectMany(e => e.Wallets)
+                .SelectMany(w => w.Transactions)
+                .Where(t => t.CreatedAt >= today)
+                .Sum(t => t.Amount),
+            WalletCount = b.Employees
+                .SelectMany(e => e.Wallets)
+                .Count(),
+            TotalBalance = b.Employees
+                .SelectMany(e => e.Wallets)
+                .Sum(w => w.Balance)
+        }).ToList();
+    }
+
+    public async Task<List<TransactionReportDto>> GetCustomerStatementAsync(string userId, DateTime from, DateTime to)
+    {
+        var transactions = await _context.Transactions
+            .Include(t => t.Wallet)
+            .ThenInclude(w => w.User)
+            .Where(t => t.Wallet.UserId == userId && t.CreatedAt >= from && t.CreatedAt <= to)
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
+
+        return transactions.Select(t => new TransactionReportDto
+        {
+            TransactionId = t.Id,
+            Type = t.Type.ToString(),
+            Amount = t.Amount,
+            Currency = t.Wallet.Currency,
+            Status = t.Status.ToString(),
+            UserEmail = t.Wallet.User.Email ?? "",
+            UserName = $"{t.Wallet.User.FirstName} {t.Wallet.User.LastName}",
+            BranchId = t.Wallet.User.BranchId,
+            CreatedAt = t.CreatedAt
+        }).ToList();
+    }
 }
 
 public class DashboardStats
@@ -138,4 +236,29 @@ public class BranchReportDto
     public int EmployeeCount { get; set; }
     public int TodayTransactions { get; set; }
     public decimal TodayVolume { get; set; }
+}
+
+public class RevenueReportDto
+{
+    public DateTime From { get; set; }
+    public DateTime To { get; set; }
+    public decimal TotalFeesCollected { get; set; }
+    public decimal ExchangeRevenue { get; set; }
+    public int TotalTransactions { get; set; }
+    public decimal AverageTransactionAmount { get; set; }
+    public decimal TotalVolume { get; set; }
+}
+
+public class BranchComparisonReportDto
+{
+    public Guid BranchId { get; set; }
+    public string BranchName { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public int EmployeeCount { get; set; }
+    public int TotalTransactions { get; set; }
+    public int TodayTransactions { get; set; }
+    public decimal TotalVolume { get; set; }
+    public decimal TodayVolume { get; set; }
+    public int WalletCount { get; set; }
+    public decimal TotalBalance { get; set; }
 }

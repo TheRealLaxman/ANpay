@@ -39,4 +39,31 @@ public class ReportController : ControllerBase
         var report = await _reportService.GetBranchReportAsync();
         return Ok(report);
     }
+
+    [HttpGet("revenue")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> GetRevenueReport([FromQuery] DateTime from, [FromQuery] DateTime to)
+    {
+        var report = await _reportService.GetRevenueReportAsync(from, to);
+        return Ok(report);
+    }
+
+    [HttpGet("branches/compare")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> GetBranchComparison()
+    {
+        var report = await _reportService.GetBranchComparisonReportAsync();
+        return Ok(report);
+    }
+
+    [HttpGet("customer-statement")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> GetCustomerStatement([FromQuery] string userId, [FromQuery] DateTime from, [FromQuery] DateTime to)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest("userId is required.");
+
+        var report = await _reportService.GetCustomerStatementAsync(userId, from, to);
+        return Ok(report);
+    }
 }

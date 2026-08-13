@@ -1,0 +1,261 @@
+@page "/customer/security"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Account Security</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(alertMessage))
+    {
+        <div class="alert alert-@(alertSuccess ? "success" : "danger")">@alertMessage</div>
+    }
+
+    <!-- Change Password -->
+    <div class="card" style="margin-bottom:24px;">
+        <h3 style="font-size:16px; margin-bottom:16px;">Change Password</h3>
+        <EditForm Model="passwordModel" OnValidSubmit="HandleChangePassword">
+            <div class="form-group">
+                <label class="form-label">Current Password</label>
+                <input type="password" class="form-control" @bind="passwordModel.CurrentPassword" required />
+            </div>
+            <div class="form-group">
+                <label class="form-label">New Password</label>
+                <input type="password" class="form-control" @bind="passwordModel.NewPassword" required />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Confirm New Password</label>
+                <input type="password" class="form-control" @bind="passwordModel.ConfirmPassword" required />
+            </div>
+            <button type="submit" class="btn btn-danger" disabled="@isChangingPassword">
+                @(isChangingPassword ? "Changing..." : "Change Password")
+            </button>
+        </EditForm>
+    </div>
+
+    <!-- Active Devices -->
+    <div class="card" style="margin-bottom:24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h3 style="font-size:16px;">Active Devices</h3>
+            <button class="btn btn-outline" style="padding:6px 12px; font-size:13px;" @onclick="LoadDevices">Refresh</button>
+        </div>
+
+        @if (loadingDevices)
+        {
+            <p style="color:var(--text-secondary); text-align:center; padding:24px;">Loading devices...</p>
+        }
+        else if (devices.Count == 0)
+        {
+            <p style="color:var(--text-secondary); text-align:center; padding:24px;">No active devices found.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>IP Address</th>
+                        <th>Last Active</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var device in devices)
+                    {
+                        <tr>
+                            <td>
+                                <div>
+                                    <span style="font-weight:500;">@device.DeviceName</span>
+                                    <br />
+                                    <span style="color:var(--text-secondary); font-size:12px;">@device.Browser - @device.OperatingSystem</span>
+                                </div>
+                            </td>
+                            <td style="font-family:monospace; font-size:13px;">@device.IpAddress</td>
+                            <td style="color:var(--text-secondary); font-size:13px;">@device.LastActive.ToString("MMM dd, yyyy HH:mm")</td>
+                            <td>
+                                @if (device.IsCurrent)
+                                {
+                                    <span class="badge badge-success">Current</span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-danger" style="padding:4px 10px; font-size:12px;"
+                                            @onclick="() => RevokeDevice(device)">Revoke</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <!-- Login History -->
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h3 style="font-size:16px;">Login History</h3>
+            <button class="btn btn-outline" style="padding:6px 12px; font-size:13px;" @onclick="LoadLoginHistory">Refresh</button>
+        </div>
+
+        @if (loadingHistory)
+        {
+            <p style="color:var(--text-secondary); text-align:center; padding:24px;">Loading login history...</p>
+        }
+        else if (loginHistory.Count == 0)
+        {
+            <p style="color:var(--text-secondary); text-align:center; padding:24px;">No login history found.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>IP Address</th>
+                        <th>Device</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in loginHistory)
+                    {
+                        <tr>
+                            <td>@entry.LoginAt.ToString("MMM dd, yyyy HH:mm")</td>
+                            <td style="font-family:monospace; font-size:13px;">@entry.IpAddress</td>
+                            <td style="font-size:13px;">@entry.DeviceInfo</td>
+                            <td>
+                                <span class="badge @(entry.IsSuccess ? "badge-success" : "badge-danger")">
+                                    @(entry.IsSuccess ? "Success" : "Failed")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private List<DeviceDto> devices = new();
+    private List<LoginHistoryDto> loginHistory = new();
+
+    private bool loadingDevices = true;
+    private bool loadingHistory = true;
+    private bool isChangingPassword = false;
+
+    private string alertMessage = string.Empty;
+    private bool alertSuccess = true;
+
+    private PasswordChangeModel passwordModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await Task.WhenAll(LoadDevices(), LoadLoginHistory());
+    }
+
+    private async Task LoadDevices()
+    {
+        loadingDevices = true;
+        try
+        {
+            devices = await Api.GetDevicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load devices: {ex.Message}", false);
+        }
+        loadingDevices = false;
+    }
+
+    private async Task LoadLoginHistory()
+    {
+        loadingHistory = true;
+        try
+        {
+            loginHistory = await Api.GetLoginHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load login history: {ex.Message}", false);
+        }
+        loadingHistory = false;
+    }
+
+    private async Task HandleChangePassword()
+    {
+        if (string.IsNullOrWhiteSpace(passwordModel.CurrentPassword) || string.IsNullOrWhiteSpace(passwordModel.NewPassword))
+        {
+            ShowAlert("Please fill in all password fields.", false);
+            return;
+        }
+        if (passwordModel.NewPassword != passwordModel.ConfirmPassword)
+        {
+            ShowAlert("New passwords do not match.", false);
+            return;
+        }
+        if (passwordModel.NewPassword.Length < 6)
+        {
+            ShowAlert("New password must be at least 6 characters.", false);
+            return;
+        }
+
+        isChangingPassword = true;
+        alertMessage = string.Empty;
+        try
+        {
+            await Api.ChangePasswordAsync(passwordModel.CurrentPassword, passwordModel.NewPassword);
+            ShowAlert("Password changed successfully!", true);
+            passwordModel = new PasswordChangeModel();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to change password: {ex.Message}", false);
+        }
+        isChangingPassword = false;
+    }
+
+    private async Task RevokeDevice(DeviceDto device)
+    {
+        try
+        {
+            await Api.RevokeDeviceAsync(device.Id);
+            ShowAlert("Device revoked successfully.", true);
+            await LoadDevices();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to revoke device: {ex.Message}", false);
+        }
+    }
+
+    private void ShowAlert(string message, bool success)
+    {
+        alertMessage = message;
+        alertSuccess = success;
+        StateHasChanged();
+    }
+
+    private class PasswordChangeModel
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

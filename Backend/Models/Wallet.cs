@@ -29,7 +29,7 @@ public class Wallet
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     [Timestamp]
-    public byte[] RowVersion { get; set; } = null!;
+    public byte[] RowVersion { get; set; } = new byte[8];
 
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

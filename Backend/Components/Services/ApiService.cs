@@ -353,6 +353,62 @@ public class ApiService
     {
         return await _http.GetFromJsonAsync<List<QrCodeDto>>($"{_baseUrl}/qr/my") ?? new();
     }
+
+    // Disputes
+    public async Task<List<DisputeDto>> GetMyDisputesAsync()
+    {
+        return await _http.GetFromJsonAsync<List<DisputeDto>>($"{_baseUrl}/dispute/my") ?? new();
+    }
+
+    public async Task<DisputeDetailResult> GetDisputeDetailAsync(Guid disputeId)
+    {
+        return (await _http.GetFromJsonAsync<DisputeDetailResult>($"{_baseUrl}/dispute/{disputeId}"))!;
+    }
+
+    public async Task<DisputeDto> CreateDisputeAsync(CreateDisputeDto dto)
+    {
+        var response = await _http.PostAsJsonAsync($"{_baseUrl}/dispute", dto);
+        return (await response.Content.ReadFromJsonAsync<DisputeDto>())!;
+    }
+
+    public async Task<DisputeMessageDto> AddDisputeMessageAsync(Guid disputeId, AddDisputeMessageDto dto)
+    {
+        var response = await _http.PostAsJsonAsync($"{_baseUrl}/dispute/{disputeId}/messages", dto);
+        return (await response.Content.ReadFromJsonAsync<DisputeMessageDto>())!;
+    }
+
+    // Fraud Alerts
+    public async Task<List<FraudAlertDto>> GetFraudAlertsAsync()
+    {
+        return await _http.GetFromJsonAsync<List<FraudAlertDto>>($"{_baseUrl}/fraud/alerts") ?? new();
+    }
+
+    public async Task UpdateFraudAlertStatusAsync(Guid alertId, string status)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/fraud/alerts/{alertId}/status", new { status });
+    }
+
+    public async Task AssignFraudAlertAsync(Guid alertId, string assignToEmail)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/fraud/alerts/{alertId}/assign", new { assignToEmail });
+    }
+
+    // Profile - Devices
+    public async Task<List<DeviceDto>> GetDevicesAsync()
+    {
+        return await _http.GetFromJsonAsync<List<DeviceDto>>($"{_baseUrl}/profile/devices") ?? new();
+    }
+
+    public async Task RevokeDeviceAsync(Guid deviceId)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/profile/devices/{deviceId}/revoke", new { });
+    }
+
+    // Profile - Login History
+    public async Task<List<LoginHistoryDto>> GetLoginHistoryAsync()
+    {
+        return await _http.GetFromJsonAsync<List<LoginHistoryDto>>($"{_baseUrl}/profile/login-history") ?? new();
+    }
 }
 
 // New DTOs
@@ -732,4 +788,74 @@ public class LimitDto
     public decimal LimitAmount { get; set; }
     public string Currency { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+}
+
+public class DisputeDto
+{
+    public Guid Id { get; set; }
+    public string Subject { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DisputeMessageDto
+{
+    public Guid Id { get; set; }
+    public Guid DisputeId { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DisputeDetailResult
+{
+    public DisputeDto Dispute { get; set; } = new();
+    public List<DisputeMessageDto> Messages { get; set; } = new();
+}
+
+public class CreateDisputeDto
+{
+    public string Subject { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+}
+
+public class AddDisputeMessageDto
+{
+    public string Content { get; set; } = string.Empty;
+}
+
+public class FraudAlertDto
+{
+    public Guid Id { get; set; }
+    public string UserEmail { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public decimal RiskScore { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? AssignedTo { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DeviceDto
+{
+    public Guid Id { get; set; }
+    public string DeviceName { get; set; } = string.Empty;
+    public string Browser { get; set; } = string.Empty;
+    public string OperatingSystem { get; set; } = string.Empty;
+    public string IpAddress { get; set; } = string.Empty;
+    public DateTime LastActive { get; set; }
+    public bool IsCurrent { get; set; }
+}
+
+public class LoginHistoryDto
+{
+    public Guid Id { get; set; }
+    public DateTime LoginAt { get; set; }
+    public string IpAddress { get; set; } = string.Empty;
+    public string DeviceInfo { get; set; } = string.Empty;
+    public bool IsSuccess { get; set; }
 }

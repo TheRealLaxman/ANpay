@@ -45,6 +45,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<SystemSetting> SystemSettings { get; set; }
     public DbSet<LoginHistory> LoginHistories { get; set; }
     public DbSet<TrustedDevice> TrustedDevices { get; set; }
+    public DbSet<IdempotencyKey> IdempotencyKeys { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -451,6 +452,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(td => td.UserId);
+        });
+
+        // IdempotencyKey
+        builder.Entity<IdempotencyKey>(entity =>
+        {
+            entity.HasKey(ik => ik.Key);
+            entity.HasIndex(ik => new { ik.Key, ik.UserId }).IsUnique();
+            entity.HasIndex(ik => ik.ExpiresAt);
+            entity.HasIndex(ik => ik.UserId);
         });
     }
 }

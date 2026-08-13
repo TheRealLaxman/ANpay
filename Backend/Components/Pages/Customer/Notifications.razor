@@ -1,9 +1,11 @@
 @page "/customer/notifications"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
+@using Microsoft.AspNetCore.SignalR.Client
 @inject ApiService Api
 @inject AuthState Auth
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="page-container">
     <header class="page-header">
@@ -186,6 +188,8 @@
     private string alertMessage = string.Empty;
     private bool alertSuccess = true;
 
+    private HubConnection? _hubConnection;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
@@ -195,6 +199,34 @@
             return;
         }
         await LoadNotifications();
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl($"{Nav.BaseUri}hubs/notifications", options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult(Auth.Token);
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<NotificationMessage>("ReceiveNotification", (notification) =>
+        {
+            var newNotification = new NotificationDto
+            {
+                Id = Guid.NewGuid(),
+                Title = notification.Title ?? "",
+                Message = notification.Message ?? "",
+                Type = notification.Type ?? "",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            notifications.Insert(0, newNotification);
+            unreadCount++;
+            ApplyFilter();
+            StateHasChanged();
+        });
+
+        await _hubConnection.StartAsync();
     }
 
     private async Task LoadNotifications()
@@ -305,5 +337,21 @@
         if (span.TotalDays < 7) return $"{(int)span.TotalDays}d ago";
         if (span.TotalDays < 30) return $"{(int)(span.TotalDays / 7)}w ago";
         return dateTime.ToString("MMM dd, yyyy");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    private class NotificationMessage
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public DateTime Timestamp { get; set; }
     }
 }

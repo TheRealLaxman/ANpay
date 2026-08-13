@@ -1,0 +1,314 @@
+@page "/admin/fraud"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Fraud Alerts</h1>
+            <p>Monitor and manage suspicious activities</p>
+        </div>
+        <div class="header-right">
+            <button class="btn btn-outline" @onclick="LoadAlerts">Refresh</button>
+            <a href="/admin/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(alertMessage))
+    {
+        <div class="alert alert-@(alertSuccess ? "success" : "danger")">@alertMessage</div>
+    }
+
+    @if (loading)
+    {
+        <div class="card" style="text-align:center; padding:48px;">
+            <p style="color:var(--text-secondary);">Loading fraud alerts...</p>
+        </div>
+    }
+    else
+    {
+        <div class="card" style="margin-bottom:24px;">
+            <div class="table-filters">
+                <select class="form-control" @bind="filterStatus" @bind:after="FilterAlerts" style="max-width:200px;">
+                    <option value="">All Status</option>
+                    <option value="Open">Open</option>
+                    <option value="UnderReview">Under Review</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="FalsePositive">False Positive</option>
+                    <option value="Resolved">Resolved</option>
+                </select>
+                <span style="color:var(--text-secondary); font-size:14px;">
+                    @filteredAlerts.Count alert(s) found
+                </span>
+            </div>
+        </div>
+
+        @if (filteredAlerts.Count == 0)
+        {
+            <div class="card" style="text-align:center; padding:48px;">
+                <p style="color:var(--text-secondary);">No fraud alerts found.</p>
+            </div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Type</th>
+                            <th>Risk Score</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var alert in filteredAlerts)
+                        {
+                            <tr>
+                                <td>@alert.UserEmail</td>
+                                <td><span class="badge @GetTypeBadgeClass(alert.Type)">@FormatAlertType(alert.Type)</span></td>
+                                <td>
+                                    <span style="color:@GetRiskScoreColor(alert.RiskScore); font-weight:600;">
+                                        @alert.RiskScore.ToString("F1")
+                                    </span>
+                                </td>
+                                <td><span class="badge @GetStatusBadgeClass(alert.Status)">@FormatStatus(alert.Status)</span></td>
+                                <td>@alert.CreatedAt.ToString("MMM dd, yyyy HH:mm")</td>
+                                <td>
+                                    <button class="btn btn-outline" style="padding:4px 10px; font-size:12px; margin-right:4px;"
+                                            @onclick="() => OpenAssignModal(alert)">Assign</button>
+                                    <button class="btn btn-outline" style="padding:4px 10px; font-size:12px;"
+                                            @onclick="() => OpenUpdateStatusModal(alert)">Update Status</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@if (showAssignModal && selectedAlert != null)
+{
+    <div class="modal-overlay" @onclick="CloseAssignModal">
+        <div class="modal-content" @onclick:stopPropagation style="width:400px;">
+            <h3>Assign Alert</h3>
+            <div class="form-group">
+                <label class="form-label">Assign To (Email)</label>
+                <input class="form-control" @bind="assignEmail" placeholder="Enter investigator email" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleAssign">Assign</button>
+                <button class="btn btn-outline" @onclick="CloseAssignModal">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showUpdateStatusModal && selectedAlert != null)
+{
+    <div class="modal-overlay" @onclick="CloseUpdateStatusModal">
+        <div class="modal-content" @onclick:stopPropagation style="width:400px;">
+            <h3>Update Alert Status</h3>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-control" @bind="updateStatusValue">
+                    <option value="Open">Open</option>
+                    <option value="UnderReview">Under Review</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="FalsePositive">False Positive</option>
+                    <option value="Resolved">Resolved</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleUpdateStatus">Update</button>
+                <button class="btn btn-outline" @onclick="CloseUpdateStatusModal">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<FraudAlertDto> allAlerts = new();
+    private List<FraudAlertDto> filteredAlerts = new();
+    private bool loading = true;
+
+    private string alertMessage = string.Empty;
+    private bool alertSuccess = true;
+
+    private string filterStatus = string.Empty;
+
+    private bool showAssignModal = false;
+    private bool showUpdateStatusModal = false;
+    private FraudAlertDto? selectedAlert = null;
+    private string assignEmail = string.Empty;
+    private string updateStatusValue = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadAlerts();
+    }
+
+    private async Task LoadAlerts()
+    {
+        loading = true;
+        try
+        {
+            allAlerts = await Api.GetFraudAlertsAsync();
+            FilterAlerts();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load fraud alerts: {ex.Message}", false);
+        }
+        loading = false;
+    }
+
+    private void FilterAlerts()
+    {
+        filteredAlerts = string.IsNullOrWhiteSpace(filterStatus)
+            ? allAlerts.ToList()
+            : allAlerts.Where(a => a.Status.Equals(filterStatus, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private void OpenAssignModal(FraudAlertDto alert)
+    {
+        selectedAlert = alert;
+        assignEmail = string.Empty;
+        showAssignModal = true;
+    }
+
+    private void CloseAssignModal()
+    {
+        showAssignModal = false;
+        selectedAlert = null;
+    }
+
+    private void OpenUpdateStatusModal(FraudAlertDto alert)
+    {
+        selectedAlert = alert;
+        updateStatusValue = alert.Status;
+        showUpdateStatusModal = true;
+    }
+
+    private void CloseUpdateStatusModal()
+    {
+        showUpdateStatusModal = false;
+        selectedAlert = null;
+    }
+
+    private async Task HandleAssign()
+    {
+        if (selectedAlert == null || string.IsNullOrWhiteSpace(assignEmail))
+        {
+            ShowAlert("Please enter an investigator email.", false);
+            return;
+        }
+
+        try
+        {
+            await Api.AssignFraudAlertAsync(selectedAlert.Id, assignEmail);
+            ShowAlert("Alert assigned successfully.", true);
+            CloseAssignModal();
+            await LoadAlerts();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to assign alert: {ex.Message}", false);
+        }
+    }
+
+    private async Task HandleUpdateStatus()
+    {
+        if (selectedAlert == null)
+            return;
+
+        try
+        {
+            await Api.UpdateFraudAlertStatusAsync(selectedAlert.Id, updateStatusValue);
+            ShowAlert("Status updated successfully.", true);
+            CloseUpdateStatusModal();
+            await LoadAlerts();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to update status: {ex.Message}", false);
+        }
+    }
+
+    private void ShowAlert(string message, bool success)
+    {
+        alertMessage = message;
+        alertSuccess = success;
+        StateHasChanged();
+    }
+
+    private string FormatAlertType(string type) => type switch
+    {
+        "SuspiciousLogin" => "Suspicious Login",
+        "UnusualTransaction" => "Unusual Transaction",
+        "MultipleFailedAttempts" => "Multiple Failed Attempts",
+        "HighValueTransfer" => "High Value Transfer",
+        "RapidTransactions" => "Rapid Transactions",
+        "LocationAnomaly" => "Location Anomaly",
+        _ => type
+    };
+
+    private string FormatStatus(string status) => status switch
+    {
+        "Open" => "Open",
+        "UnderReview" => "Under Review",
+        "Confirmed" => "Confirmed",
+        "FalsePositive" => "False Positive",
+        "Resolved" => "Resolved",
+        _ => status
+    };
+
+    private string GetRiskScoreColor(decimal score) => score switch
+    {
+        >= 8.0m => "#dc2626",
+        >= 6.0m => "#ea580c",
+        >= 4.0m => "#d97706",
+        _ => "#16a34a"
+    };
+
+    private string GetTypeBadgeClass(string type) => type switch
+    {
+        "SuspiciousLogin" => "badge-warning",
+        "UnusualTransaction" => "badge-danger",
+        "MultipleFailedAttempts" => "badge-danger",
+        "HighValueTransfer" => "badge-warning",
+        "RapidTransactions" => "badge-info",
+        "LocationAnomaly" => "badge-info",
+        _ => ""
+    };
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Open" => "badge-warning",
+        "UnderReview" => "badge-info",
+        "Confirmed" => "badge-danger",
+        "FalsePositive" => "badge-success",
+        "Resolved" => "badge-success",
+        _ => ""
+    };
+}

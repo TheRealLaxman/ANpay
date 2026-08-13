@@ -1,0 +1,382 @@
+@page "/customer/disputes"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    @if (!string.IsNullOrEmpty(alertMessage))
+    {
+        <div class="alert alert-@(alertSuccess ? "success" : "danger")">@alertMessage</div>
+    }
+
+    @if (selectedDisputeId == null)
+    {
+        <header class="page-header">
+            <div class="header-left">
+                <h1>My Disputes</h1>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-primary" @onclick="OpenCreateModal">Create Dispute</button>
+            </div>
+        </header>
+
+        @if (loading)
+        {
+            <div class="card" style="text-align:center; padding:48px;">
+                <p style="color:var(--text-secondary);">Loading disputes...</p>
+            </div>
+        }
+        else if (disputes.Count == 0)
+        {
+            <div class="card" style="text-align:center; padding:48px;">
+                <p style="color:var(--text-secondary); margin-bottom:16px;">You have no disputes yet.</p>
+                <button class="btn btn-primary" @onclick="OpenCreateModal">Create your first dispute</button>
+            </div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Subject</th>
+                            <th>Category</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var dispute in disputes)
+                        {
+                            <tr style="cursor:pointer;" @onclick="() => ViewDispute(dispute.Id)">
+                                <td>@dispute.Subject</td>
+                                <td>@FormatCategory(dispute.Category)</td>
+                                <td>
+                                    <span class="badge @GetPriorityBadgeClass(dispute.Priority)">@dispute.Priority</span>
+                                </td>
+                                <td>
+                                    <span class="badge @GetStatusBadgeClass(dispute.Status)">@dispute.Status</span>
+                                </td>
+                                <td>@dispute.CreatedAt.ToString("MMM dd, yyyy HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else
+    {
+        <div style="max-width:800px; margin:0 auto;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px;">
+                <button class="btn btn-outline" style="padding:8px 12px;" @onclick="BackToList">&larr; Back</button>
+                <h1 style="font-size:24px; font-weight:600;">@currentDispute?.Subject</h1>
+            </div>
+
+            @if (loadingDetail)
+            {
+                <div class="card" style="text-align:center; padding:48px;">
+                    <p style="color:var(--text-secondary);">Loading dispute...</p>
+                </div>
+            }
+            else if (currentDispute != null)
+            {
+                <div style="display:flex; gap:12px; margin-bottom:24px; align-items:center;">
+                    <span class="badge @GetStatusBadgeClass(currentDispute.Status)">@currentDispute.Status</span>
+                    <span class="badge @GetPriorityBadgeClass(currentDispute.Priority)">@currentDispute.Priority</span>
+                    <span style="color:var(--text-secondary); font-size:14px; margin-left:auto;">
+                        Category: @FormatCategory(currentDispute.Category)
+                    </span>
+                </div>
+
+                <div class="card" style="margin-bottom:24px;">
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Subject</span>
+                        <span style="font-weight:500;">@currentDispute.Subject</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Category</span>
+                        <span style="font-weight:500;">@FormatCategory(currentDispute.Category)</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Priority</span>
+                        <span class="badge @GetPriorityBadgeClass(currentDispute.Priority)">@currentDispute.Priority</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Status</span>
+                        <span class="badge @GetStatusBadgeClass(currentDispute.Status)">@currentDispute.Status</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Description</span>
+                        <span style="font-weight:500; max-width:500px; text-align:right; white-space:pre-wrap;">@currentDispute.Description</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0;">
+                        <span style="color:var(--text-secondary);">Created</span>
+                        <span style="font-weight:500;">@currentDispute.CreatedAt.ToString("MMM dd, yyyy HH:mm")</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-bottom:16px; font-size:16px;">Messages</h3>
+                    <div style="max-height:400px; overflow-y:auto; margin-bottom:20px; padding-right:8px;">
+                        @if (messages.Count == 0)
+                        {
+                            <p style="color:var(--text-secondary); text-align:center; padding:24px;">No messages yet. Start the conversation below.</p>
+                        }
+                        else
+                        {
+                            @foreach (var msg in messages)
+                            {
+                                <div style="padding:16px; border-bottom:1px solid var(--border-color);">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                        <span style="font-weight:500;">@msg.SenderName</span>
+                                        <span style="color:var(--text-secondary); font-size:12px;">@msg.CreatedAt.ToString("MMM dd, yyyy HH:mm")</span>
+                                    </div>
+                                    <p style="color:var(--text-primary); white-space:pre-wrap; line-height:1.6;">@msg.Content</p>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    @if (currentDispute.Status != "Closed" && currentDispute.Status != "Resolved")
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Reply</label>
+                            <textarea class="form-control" rows="3" placeholder="Type your message..." @bind="newMessage"></textarea>
+                        </div>
+                        <button class="btn btn-primary" @onclick="SendMessage" disabled="@string.IsNullOrWhiteSpace(newMessage)">
+                            Send Message
+                        </button>
+                    }
+                    else
+                    {
+                        <p style="color:var(--text-secondary); font-size:14px;">This dispute is @currentDispute.Status.ToLower(). Messaging is disabled.</p>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseCreateModal">
+        <div class="modal-content" @onclick:stopPropagation style="width:500px;">
+            <h3>Create Dispute</h3>
+            <div class="form-group">
+                <label class="form-label">Subject</label>
+                <input class="form-control" @bind="createSubject" placeholder="Brief summary of the issue" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" rows="4" @bind="createDescription" placeholder="Describe the dispute in detail..."></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Category</label>
+                <select class="form-control" @bind="createCategory">
+                    <option value="WrongTransfer">Wrong Transfer</option>
+                    <option value="UnauthorizedTransaction">Unauthorized Transaction</option>
+                    <option value="FailedPayment">Failed Payment</option>
+                    <option value="DuplicatePayment">Duplicate Payment</option>
+                    <option value="MerchantDispute">Merchant Dispute</option>
+                    <option value="CashWithdrawalProblem">Cash Withdrawal Problem</option>
+                    <option value="ServiceIssue">Service Issue</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Priority</label>
+                <select class="form-control" @bind="createPriority">
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="SubmitDispute">Submit</button>
+                <button class="btn btn-outline" @onclick="CloseCreateModal">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<DisputeDto> disputes = new();
+    private List<DisputeMessageDto> messages = new();
+
+    private Guid? selectedDisputeId = null;
+    private DisputeDto? currentDispute = null;
+
+    private bool loading = false;
+    private bool loadingDetail = false;
+
+    private string alertMessage = string.Empty;
+    private bool alertSuccess = true;
+
+    private bool showCreateModal = false;
+    private string createSubject = string.Empty;
+    private string createDescription = string.Empty;
+    private string createCategory = "WrongTransfer";
+    private string createPriority = "Medium";
+
+    private string newMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadDisputes();
+    }
+
+    private async Task LoadDisputes()
+    {
+        loading = true;
+        try
+        {
+            disputes = await Api.GetMyDisputesAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load disputes: {ex.Message}", false);
+        }
+        loading = false;
+    }
+
+    private async Task ViewDispute(Guid disputeId)
+    {
+        selectedDisputeId = disputeId;
+        loadingDetail = true;
+        try
+        {
+            var result = await Api.GetDisputeDetailAsync(disputeId);
+            currentDispute = result.Dispute;
+            messages = result.Messages ?? new();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load dispute: {ex.Message}", false);
+            BackToList();
+        }
+        loadingDetail = false;
+    }
+
+    private void BackToList()
+    {
+        selectedDisputeId = null;
+        currentDispute = null;
+        messages.Clear();
+        newMessage = string.Empty;
+    }
+
+    private void OpenCreateModal()
+    {
+        createSubject = string.Empty;
+        createDescription = string.Empty;
+        createCategory = "WrongTransfer";
+        createPriority = "Medium";
+        showCreateModal = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        showCreateModal = false;
+    }
+
+    private async Task SubmitDispute()
+    {
+        if (string.IsNullOrWhiteSpace(createSubject))
+        {
+            ShowAlert("Subject is required.", false);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(createDescription))
+        {
+            ShowAlert("Description is required.", false);
+            return;
+        }
+
+        try
+        {
+            var dto = new CreateDisputeDto
+            {
+                Subject = createSubject,
+                Description = createDescription,
+                Category = createCategory,
+                Priority = createPriority
+            };
+            var created = await Api.CreateDisputeAsync(dto);
+            ShowAlert("Dispute created successfully.", true);
+            CloseCreateModal();
+            await ViewDispute(created.Id);
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to create dispute: {ex.Message}", false);
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(newMessage) || selectedDisputeId == null)
+            return;
+
+        try
+        {
+            var msg = await Api.AddDisputeMessageAsync(selectedDisputeId.Value, new AddDisputeMessageDto { Content = newMessage });
+            messages.Add(msg);
+            newMessage = string.Empty;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to send message: {ex.Message}", false);
+        }
+    }
+
+    private void ShowAlert(string message, bool success)
+    {
+        alertMessage = message;
+        alertSuccess = success;
+        StateHasChanged();
+    }
+
+    private string FormatCategory(string category) => category switch
+    {
+        "WrongTransfer" => "Wrong Transfer",
+        "UnauthorizedTransaction" => "Unauthorized Transaction",
+        "FailedPayment" => "Failed Payment",
+        "DuplicatePayment" => "Duplicate Payment",
+        "MerchantDispute" => "Merchant Dispute",
+        "CashWithdrawalProblem" => "Cash Withdrawal Problem",
+        "ServiceIssue" => "Service Issue",
+        _ => category
+    };
+
+    private string GetPriorityBadgeClass(string priority) => priority switch
+    {
+        "Urgent" => "badge-danger",
+        "High" => "badge-warning",
+        "Medium" => "badge-warning",
+        "Low" => "badge-success",
+        _ => ""
+    };
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Open" => "badge-success",
+        "UnderReview" => "badge-warning",
+        "InProgress" => "badge-warning",
+        "Resolved" => "badge-success",
+        "Closed" => "badge-danger",
+        _ => ""
+    };
+}
