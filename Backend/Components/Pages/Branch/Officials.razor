@@ -1,6 +1,7 @@
 @page "/branch/officials"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
+@inject ApiService Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 
@@ -17,27 +18,135 @@
             <p>Manage officials in your branch</p>
         </div>
         <div class="header-right">
+            <button class="btn btn-primary" @onclick="OpenCreateModal">Add Employee</button>
             <a href="/branch/dashboard" class="btn btn-outline">Back</a>
         </div>
     </div>
 
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
     <div class="card">
-        <p style="color: var(--text-secondary);">Employee management APIs are ready.</p>
-        <p style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;">Available APIs:</p>
-        <ul style="color: var(--text-secondary); font-size: 14px; margin-left: 20px;">
-            <li>GET /api/employee/branch/{branchId}</li>
-            <li>POST /api/employee - Create employee</li>
-            <li>PUT /api/employee/{id}/subrole - Update sub-role</li>
-            <li>DELETE /api/employee/{id} - Deactivate</li>
-        </ul>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Sub-Role</th>
+                    <th>Employee Code</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var emp in employees)
+                {
+                    <tr>
+                        <td>@emp.FirstName @emp.LastName</td>
+                        <td>@emp.Email</td>
+                        <td><span class="badge badge-info">@emp.SubRole</span></td>
+                        <td>@emp.EmployeeCode</td>
+                        <td><span class="badge @(emp.IsActive ? "badge-success" : "badge-danger")">@(emp.IsActive ? "Active" : "Inactive")</span></td>
+                        <td>
+                            <select class="form-control" style="width:auto;display:inline-block;" @bind="emp.SubRole" @bind:after="() => UpdateSubRole(emp)">
+                                <option value="Teller">Teller</option>
+                                <option value="CustomerService">Customer Service</option>
+                                <option value="Operations">Operations</option>
+                                <option value="Manager">Manager</option>
+                            </select>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!employees.Any())
+        {
+            <p style="text-align:center; color: var(--text-secondary); padding: 32px;">No employees found</p>
+        }
     </div>
 </div>
 
+@if (showCreateModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Add Employee</h3>
+            <div class="form-group">
+                <label class="form-label">User Email</label>
+                <input class="form-control" @bind="newEmployeeEmail" placeholder="Enter email of existing user" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Sub-Role</label>
+                <select class="form-control" @bind="newEmployeeSubRole">
+                    <option value="Teller">Teller</option>
+                    <option value="CustomerService">Customer Service</option>
+                    <option value="Operations">Operations</option>
+                    <option value="Manager">Manager</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreate">Add</button>
+                <button class="btn btn-outline" @onclick="() => showCreateModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    private List<EmployeeDto> employees = new();
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private bool showCreateModal;
+    private string newEmployeeEmail = string.Empty;
+    private string newEmployeeSubRole = "Teller";
+    private Guid branchId = Guid.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadEmployees();
     }
+
+    private async Task LoadEmployees()
+    {
+        try
+        {
+            var branchDash = await Api.GetDashboardStatsAsync();
+            employees = await Api.GetEmployeesAsync(Guid.Empty) ?? new();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private void OpenCreateModal() { newEmployeeEmail = string.Empty; newEmployeeSubRole = "Teller"; showCreateModal = true; }
+
+    private async Task HandleCreate()
+    {
+        try
+        {
+            await Api.CreateEmployeeAsync(branchId, newEmployeeEmail, newEmployeeSubRole);
+            ShowAlert("Employee added successfully", "success");
+            showCreateModal = false;
+            await LoadEmployees();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private async Task UpdateSubRole(EmployeeDto emp)
+    {
+        try
+        {
+            await Api.UpdateEmployeeSubRoleAsync(emp.Id, emp.SubRole);
+            ShowAlert("Sub-role updated", "success");
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private void ShowAlert(string msg, string type) { message = msg; isSuccess = type == "success"; }
 }

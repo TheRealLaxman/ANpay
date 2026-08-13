@@ -1,0 +1,422 @@
+@page "/customer/kyc"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>KYC Verification</h1>
+            <p>Complete your identity verification to unlock full features</p>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="card" style="text-align: center; padding: 48px;">
+            <div class="spinner" style="width: 32px; height: 32px; border-width: 3px;"></div>
+            <p style="margin-top: 16px; color: var(--text-secondary);">Loading KYC status...</p>
+        </div>
+    }
+    else
+    {
+        if (!string.IsNullOrEmpty(message))
+        {
+            <div class="alert @(isSuccess ? "alert-success" : "alert-danger")">@message</div>
+        }
+
+        <!-- KYC Status Tracker -->
+        <div class="card" style="margin-bottom: 24px;">
+            <h3 style="font-size: 16px; margin-bottom: 20px;">Verification Status</h3>
+            <div class="kyc-tracker">
+                @foreach (var step in statusSteps)
+                {
+                    <div class="kyc-step @(step.IsCompleted ? "completed" : "") @(step.IsCurrent ? "current" : "")">
+                        <div class="step-circle">
+                            @if (step.IsCompleted)
+                            {
+                                <span>&#10003;</span>
+                            }
+                            else
+                            {
+                                <span>@step.Index</span>
+                            }
+                        </div>
+                        <div class="step-label">@step.Label</div>
+                        @if (step.Index < statusSteps.Length)
+                        {
+                            <div class="step-connector @(step.IsCompleted ? "completed" : "")"></div>
+                        }
+                    </div>
+                }
+            </div>
+            @if (kycProfile != null)
+            {
+                <div style="margin-top: 16px; display: flex; align-items: center; gap: 12px;">
+                    <span class="badge @GetStatusBadgeClass(kycProfile.Status)">@kycProfile.Status</span>
+                    @if (kycProfile.SubmittedAt.HasValue)
+                    {
+                        <span style="color: var(--text-secondary); font-size: 13px;">Submitted on @kycProfile.SubmittedAt.Value.ToString("MMM dd, yyyy HH:mm")</span>
+                    }
+                    @if (!string.IsNullOrEmpty(kycProfile.ReviewNotes))
+                    {
+                        <span style="color: var(--text-secondary); font-size: 13px;">- @kycProfile.ReviewNotes</span>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (kycProfile == null || kycProfile.Status == "NotStarted" || kycProfile.Status == "Rejected")
+        {
+            <!-- KYC Submission Form -->
+            <div class="card">
+                <h3 style="font-size: 16px; margin-bottom: 20px;">
+                    @(kycProfile?.Status == "Rejected" ? "Resubmit KYC Application" : "Personal Information")
+                </h3>
+
+                <EditForm Model="submitModel" OnValidSubmit="HandleSubmit">
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label class="form-label">First Name</label>
+                            <input type="text" class="form-control" @bind="submitModel.FirstName" placeholder="Enter first name" required />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Last Name</label>
+                            <input type="text" class="form-control" @bind="submitModel.LastName" placeholder="Enter last name" required />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Date of Birth</label>
+                        <input type="date" class="form-control" @bind="submitModel.DateOfBirth" required />
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Address</label>
+                        <input type="text" class="form-control" @bind="submitModel.Address" placeholder="Enter full address" required />
+                    </div>
+
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label class="form-label">City</label>
+                            <input type="text" class="form-control" @bind="submitModel.City" placeholder="Enter city" required />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Country</label>
+                            <input type="text" class="form-control" @bind="submitModel.Country" placeholder="Enter country" required />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Phone Number</label>
+                        <input type="tel" class="form-control" @bind="submitModel.Phone" placeholder="Enter phone number" required />
+                    </div>
+
+                    <div style="border-top: 1px solid var(--border-color); margin: 24px 0; padding-top: 24px;">
+                        <h3 style="font-size: 16px; margin-bottom: 20px;">Identity Document</h3>
+
+                        <div class="form-group">
+                            <label class="form-label">ID Type</label>
+                            <select class="form-control" @bind="submitModel.IdType" required>
+                                <option value="">Select ID Type</option>
+                                <option value="Citizenship">Citizenship Certificate</option>
+                                <option value="Passport">Passport</option>
+                                <option value="DriverLicense">Driver's License</option>
+                                <option value="NationalID">National ID Card</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">ID Number</label>
+                            <input type="text" class="form-control" @bind="submitModel.IdNumber" placeholder="Enter document number" required />
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 24px;">
+                        <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                            @if (isSubmitting)
+                            {
+                                <span class="spinner"></span>
+                            }
+                            @(isSubmitting ? "Submitting..." : "Submit KYC Application")
+                        </button>
+                        <a href="/customer/dashboard" class="btn btn-outline">Cancel</a>
+                    </div>
+                </EditForm>
+            </div>
+        }
+        else if (kycProfile.Status == "Submitted" || kycProfile.Status == "UnderReview")
+        {
+            <div class="card" style="text-align: center; padding: 48px;">
+                <div style="font-size: 48px; margin-bottom: 16px;">
+                    @if (kycProfile.Status == "Submitted")
+                    {
+                        <span>&#128203;</span>
+                    }
+                    else
+                    {
+                        <span>&#128269;</span>
+                    }
+                </div>
+                <h3 style="font-size: 18px; margin-bottom: 8px;">@(kycProfile.Status == "Submitted" ? "KYC Submitted" : "Under Review")</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 24px; max-width: 400px; margin-left: auto; margin-right: auto;">
+                    @if (kycProfile.Status == "Submitted")
+                    {
+                        <span>Your KYC application has been submitted successfully. Our team will review your documents shortly.</span>
+                    }
+                    else
+                    {
+                        <span>Your KYC application is currently being reviewed by our verification team. This may take 1-2 business days.</span>
+                    }
+                </p>
+                <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+            </div>
+        }
+        else if (kycProfile.Status == "Approved")
+        {
+            <div class="card" style="text-align: center; padding: 48px;">
+                <div style="font-size: 48px; margin-bottom: 16px;">&#9989;</div>
+                <h3 style="font-size: 18px; margin-bottom: 8px; color: var(--accent-green);">KYC Approved</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                    Your identity has been verified. You now have full access to all platform features.
+                </p>
+                @if (kycProfile.ReviewedAt.HasValue)
+                {
+                    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 24px;">
+                        Approved on @kycProfile.ReviewedAt.Value.ToString("MMM dd, yyyy HH:mm")
+                    </p>
+                }
+                <a href="/customer/dashboard" class="btn btn-primary">Go to Dashboard</a>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .kyc-tracker {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        position: relative;
+        padding: 0 16px;
+    }
+
+    .kyc-step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        flex: 1;
+    }
+
+    .step-circle {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background-color: var(--bg-hover);
+        border: 2px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        z-index: 1;
+        transition: all 0.3s;
+    }
+
+    .kyc-step.completed .step-circle {
+        background-color: var(--accent-green);
+        border-color: var(--accent-green);
+        color: white;
+    }
+
+    .kyc-step.current .step-circle {
+        background-color: var(--accent-red);
+        border-color: var(--accent-red);
+        color: white;
+        box-shadow: 0 0 0 4px rgba(246, 70, 93, 0.2);
+    }
+
+    .step-label {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        text-align: center;
+    }
+
+    .kyc-step.completed .step-label {
+        color: var(--accent-green);
+    }
+
+    .kyc-step.current .step-label {
+        color: var(--accent-red);
+        font-weight: 500;
+    }
+
+    .step-connector {
+        position: absolute;
+        top: 18px;
+        left: calc(50% + 18px);
+        width: calc(100% - 36px);
+        height: 2px;
+        background-color: var(--border-color);
+        z-index: 0;
+    }
+
+    .step-connector.completed {
+        background-color: var(--accent-green);
+    }
+</style>
+
+@code {
+    private KycProfileDto? kycProfile;
+    private KycSubmitModel submitModel = new();
+    private bool loading = true;
+    private bool isSubmitting = false;
+    private string message = string.Empty;
+    private bool isSuccess = false;
+
+    private StatusStep[] statusSteps = new[]
+    {
+        new StatusStep { Index = 1, Label = "Not Started", Status = "NotStarted" },
+        new StatusStep { Index = 2, Label = "Submitted", Status = "Submitted" },
+        new StatusStep { Index = 3, Label = "Under Review", Status = "UnderReview" },
+        new StatusStep { Index = 4, Label = "Approved", Status = "Approved" },
+        new StatusStep { Index = 5, Label = "Rejected", Status = "Rejected" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadKycStatus();
+    }
+
+    private async Task LoadKycStatus()
+    {
+        loading = true;
+        message = string.Empty;
+        try
+        {
+            var response = await Api.GetMyKycAsync();
+            if (response != null)
+            {
+                kycProfile = response;
+                UpdateTrackerProgress();
+            }
+            else
+            {
+                kycProfile = null;
+                UpdateTrackerProgress();
+            }
+        }
+        catch
+        {
+            kycProfile = null;
+            UpdateTrackerProgress();
+        }
+        loading = false;
+    }
+
+    private void UpdateTrackerProgress()
+    {
+        var currentStatus = kycProfile?.Status ?? "NotStarted";
+        var statusOrder = new[] { "NotStarted", "Submitted", "UnderReview", "Approved", "Rejected" };
+        var currentIndex = Array.IndexOf(statusOrder, currentStatus);
+
+        foreach (var step in statusSteps)
+        {
+            var stepIndex = Array.IndexOf(statusOrder, step.Status);
+            step.IsCompleted = stepIndex < currentIndex;
+            step.IsCurrent = step.Status == currentStatus;
+
+            if (currentStatus == "Rejected")
+            {
+                step.IsCompleted = step.Status == "Rejected";
+                step.IsCurrent = step.Status == "Rejected";
+            }
+            else if (currentStatus == "Approved")
+            {
+                step.IsCompleted = step.Status != "Rejected";
+                step.IsCurrent = step.Status == "Approved";
+            }
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        isSubmitting = true;
+        message = string.Empty;
+
+        try
+        {
+            var dto = new KycSubmitRequestDto
+            {
+                FirstName = submitModel.FirstName,
+                LastName = submitModel.LastName,
+                DateOfBirth = submitModel.DateOfBirth,
+                Address = submitModel.Address,
+                City = submitModel.City,
+                Country = submitModel.Country,
+                Phone = submitModel.Phone,
+                IdType = submitModel.IdType,
+                IdNumber = submitModel.IdNumber
+            };
+
+            await Api.SubmitKycAsync(dto);
+            message = "KYC application submitted successfully!";
+            isSuccess = true;
+            await LoadKycStatus();
+        }
+        catch (Exception ex)
+        {
+            message = $"Failed to submit KYC: {ex.Message}";
+            isSuccess = false;
+        }
+
+        isSubmitting = false;
+    }
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "NotStarted" => "badge-warning",
+        "Submitted" => "badge-warning",
+        "UnderReview" => "badge-warning",
+        "Approved" => "badge-success",
+        "Rejected" => "badge-danger",
+        _ => "badge-warning"
+    };
+
+    public class KycSubmitModel
+    {
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public DateTime? DateOfBirth { get; set; }
+        public string Address { get; set; } = string.Empty;
+        public string City { get; set; } = string.Empty;
+        public string Country { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string IdType { get; set; } = string.Empty;
+        public string IdNumber { get; set; } = string.Empty;
+    }
+
+    public class StatusStep
+    {
+        public int Index { get; set; }
+        public string Label { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public bool IsCompleted { get; set; }
+        public bool IsCurrent { get; set; }
+    }
+}

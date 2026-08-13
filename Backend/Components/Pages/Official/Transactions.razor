@@ -1,6 +1,7 @@
 @page "/official/transactions"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
+@inject ApiService Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 
@@ -14,30 +15,186 @@
     <div class="page-header">
         <div class="header-left">
             <h1>Process Transactions</h1>
-            <p>Review and process pending transactions</p>
+            <p>Process deposits, withdrawals, and transfers for customers</p>
         </div>
         <div class="header-right">
             <a href="/official/dashboard" class="btn btn-outline">Back</a>
         </div>
     </div>
 
-    <div class="card">
-        <p style="color: var(--text-secondary);">Transaction processing APIs are ready.</p>
-        <p style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;">Available APIs:</p>
-        <ul style="color: var(--text-secondary); font-size: 14px; margin-left: 20px;">
-            <li>POST /api/wallet/deposit - Process deposit</li>
-            <li>POST /api/wallet/withdraw - Process withdrawal</li>
-            <li>POST /api/wallet/transfer - Process transfer</li>
-            <li>GET /api/approval/pending - View pending approvals</li>
-        </ul>
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
+    <div class="tabs" style="display: flex; gap: 8px; margin-bottom: 24px;">
+        <button class="btn @(activeTab == "deposit" ? "btn-primary" : "btn-outline")" @onclick='() => activeTab = "deposit"'>Deposit</button>
+        <button class="btn @(activeTab == "withdraw" ? "btn-primary" : "btn-outline")" @onclick='() => activeTab = "withdraw"'>Withdrawal</button>
+        <button class="btn @(activeTab == "transfer" ? "btn-primary" : "btn-outline")" @onclick='() => activeTab = "transfer"'>Transfer</button>
     </div>
+
+    @if (activeTab == "deposit")
+    {
+        <div class="card">
+            <h3 style="margin-bottom: 16px;">Process Deposit</h3>
+            <div class="form-group">
+                <label class="form-label">Wallet ID</label>
+                <input class="form-control" @bind="depositWalletId" placeholder="Enter customer wallet ID" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount</label>
+                <input class="form-control" type="number" step="0.01" @bind="depositAmount" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input class="form-control" @bind="depositDescription" />
+            </div>
+            <button class="btn btn-primary" @onclick="HandleDeposit" disabled="@isProcessing">
+                @if (isProcessing) { <span>Processing...</span> } else { <span>Process Deposit</span> }
+            </button>
+        </div>
+    }
+
+    @if (activeTab == "withdraw")
+    {
+        <div class="card">
+            <h3 style="margin-bottom: 16px;">Process Withdrawal</h3>
+            <div class="form-group">
+                <label class="form-label">Wallet ID</label>
+                <input class="form-control" @bind="withdrawWalletId" placeholder="Enter customer wallet ID" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount</label>
+                <input class="form-control" type="number" step="0.01" @bind="withdrawAmount" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input class="form-control" @bind="withdrawDescription" />
+            </div>
+            <button class="btn btn-danger" @onclick="HandleWithdraw" disabled="@isProcessing">
+                @if (isProcessing) { <span>Processing...</span> } else { <span>Process Withdrawal</span> }
+            </button>
+        </div>
+    }
+
+    @if (activeTab == "transfer")
+    {
+        <div class="card">
+            <h3 style="margin-bottom: 16px;">Process Transfer</h3>
+            <div class="form-group">
+                <label class="form-label">Source Wallet ID</label>
+                <input class="form-control" @bind="transferFromWalletId" placeholder="Enter source wallet ID" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Destination Wallet ID</label>
+                <input class="form-control" @bind="transferToWalletId" placeholder="Enter destination wallet ID" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount</label>
+                <input class="form-control" type="number" step="0.01" @bind="transferAmount" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input class="form-control" @bind="transferDescription" />
+            </div>
+            <button class="btn btn-success" @onclick="HandleTransfer" disabled="@isProcessing">
+                @if (isProcessing) { <span>Processing...</span> } else { <span>Process Transfer</span> }
+            </button>
+        </div>
+    }
 </div>
 
 @code {
+    private string activeTab = "deposit";
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private bool isProcessing;
+
+    private string depositWalletId = string.Empty;
+    private decimal depositAmount;
+    private string depositDescription = string.Empty;
+
+    private string withdrawWalletId = string.Empty;
+    private decimal withdrawAmount;
+    private string withdrawDescription = string.Empty;
+
+    private string transferFromWalletId = string.Empty;
+    private string transferToWalletId = string.Empty;
+    private decimal transferAmount;
+    private string transferDescription = string.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsOfficial())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
     }
+
+    private async Task HandleDeposit()
+    {
+        if (!Guid.TryParse(depositWalletId, out var walletId) || depositAmount <= 0)
+        {
+            ShowAlert("Please enter valid wallet ID and amount", "danger");
+            return;
+        }
+        isProcessing = true;
+        try
+        {
+            await Api.DepositAsync(walletId, depositAmount, depositDescription);
+            ShowAlert("Deposit processed successfully", "success");
+            depositWalletId = string.Empty;
+            depositAmount = 0;
+            depositDescription = string.Empty;
+        }
+        catch (Exception ex) { ShowAlert($"Deposit failed: {ex.Message}", "danger"); }
+        isProcessing = false;
+    }
+
+    private async Task HandleWithdraw()
+    {
+        if (!Guid.TryParse(withdrawWalletId, out var walletId) || withdrawAmount <= 0)
+        {
+            ShowAlert("Please enter valid wallet ID and amount", "danger");
+            return;
+        }
+        isProcessing = true;
+        try
+        {
+            await Api.WithdrawAsync(walletId, withdrawAmount, withdrawDescription);
+            ShowAlert("Withdrawal processed successfully", "success");
+            withdrawWalletId = string.Empty;
+            withdrawAmount = 0;
+            withdrawDescription = string.Empty;
+        }
+        catch (Exception ex) { ShowAlert($"Withdrawal failed: {ex.Message}", "danger"); }
+        isProcessing = false;
+    }
+
+    private async Task HandleTransfer()
+    {
+        if (!Guid.TryParse(transferFromWalletId, out var fromId) ||
+            !Guid.TryParse(transferToWalletId, out var toId) ||
+            transferAmount <= 0)
+        {
+            ShowAlert("Please enter valid wallet IDs and amount", "danger");
+            return;
+        }
+        isProcessing = true;
+        try
+        {
+            await Api.TransferAsync(fromId, toId, transferAmount, transferDescription);
+            ShowAlert("Transfer processed successfully", "success");
+            transferFromWalletId = string.Empty;
+            transferToWalletId = string.Empty;
+            transferAmount = 0;
+            transferDescription = string.Empty;
+        }
+        catch (Exception ex) { ShowAlert($"Transfer failed: {ex.Message}", "danger"); }
+        isProcessing = false;
+    }
+
+    private void ShowAlert(string msg, string type) { message = msg; isSuccess = type == "success"; StateHasChanged(); }
 }

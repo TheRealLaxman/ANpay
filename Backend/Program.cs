@@ -81,6 +81,9 @@ builder.Services.AddScoped<CashService>();
 builder.Services.AddScoped<CryptoService>();
 builder.Services.AddScoped<MerchantService>();
 builder.Services.AddScoped<QrPaymentService>();
+builder.Services.AddScoped<DisputeService>();
+builder.Services.AddScoped<FraudService>();
+builder.Services.AddScoped<SystemSettingService>();
 builder.Services.AddSingleton<IEmailService, ConsoleEmailService>();
 builder.Services.AddSingleton<ISmsService, ConsoleSmsService>();
 
@@ -155,6 +158,13 @@ using (var scope = app.Services.CreateScope())
 
     var limitService = scope.ServiceProvider.GetRequiredService<LimitService>();
     await limitService.SeedDefaultLimitsAsync();
+
+    var settingService = scope.ServiceProvider.GetRequiredService<SystemSettingService>();
+    await settingService.SetAsync("PlatformName", "ANpay", "General", "Platform display name");
+    await settingService.SetAsync("PlatformVersion", "1.0.0", "General", "Current platform version");
+    await settingService.SetAsync("MaintenanceMode", "false", "General", "Enable maintenance mode");
+    await settingService.SetAsync("RegistrationEnabled", "true", "General", "Allow new registrations");
+    await settingService.SetAsync("DefaultCurrency", "USD", "General", "Default wallet currency");
 }
 
 // Configure the HTTP request pipeline.

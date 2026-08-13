@@ -1,0 +1,309 @@
+@page "/customer/notifications"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Notifications</h1>
+            @if (unreadCount > 0)
+            {
+                <span class="badge badge-danger" style="margin-left:8px; font-size:13px; padding:4px 10px;">@unreadCount</span>
+            }
+        </div>
+        <div class="header-right">
+            @if (unreadCount > 0)
+            {
+                <button class="btn btn-outline" @onclick="MarkAllRead" disabled="@isProcessing">
+                    Mark All Read
+                </button>
+            }
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(alertMessage))
+    {
+        <div class="alert alert-@(alertSuccess ? "success" : "danger")">@alertMessage</div>
+    }
+
+    <div style="display:flex; gap:8px; margin-bottom:24px;">
+        <button class="btn @(activeFilter == "all" ? "btn-primary" : "btn-outline")" @onclick='() => SetFilter("all")'>
+            All
+        </button>
+        <button class="btn @(activeFilter == "unread" ? "btn-primary" : "btn-outline")" @onclick='() => SetFilter("unread")'>
+            Unread @if (unreadCount > 0) { <span style="margin-left:4px; opacity:0.8;">(@unreadCount)</span> }
+        </button>
+    </div>
+
+    @if (loading)
+    {
+        <div class="card" style="text-align:center; padding:48px;">
+            <p style="color:var(--text-secondary);">Loading notifications...</p>
+        </div>
+    }
+    else if (filteredNotifications.Count == 0)
+    {
+        <div class="card" style="text-align:center; padding:48px;">
+            <div style="font-size:48px; margin-bottom:16px; opacity:0.3;">&#128276;</div>
+            <p style="color:var(--text-secondary); font-size:16px;">No notifications</p>
+            <p style="color:var(--text-secondary); font-size:14px; margin-top:8px;">
+                @if (activeFilter == "unread")
+                {
+                    <span>You're all caught up!</span>
+                }
+                else
+                {
+                    <span>When you receive notifications, they'll appear here.</span>
+                }
+            </p>
+        </div>
+    }
+    else
+    {
+        <div style="display:flex; flex-direction:column; gap:4px;">
+            @foreach (var notification in filteredNotifications)
+            {
+                <div class="notification-item @(notification.IsRead ? "notification-read" : "notification-unread")"
+                     @onclick="() => HandleNotificationClick(notification)"
+                     style="cursor:pointer;">
+                    <div class="notification-icon @GetIconClass(notification.Type)">
+                        @GetNotificationIcon(notification.Type)
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                            <p style="font-weight:@(notification.IsRead ? "400" : "600"); font-size:14px; color:var(--text-primary);">
+                                @notification.Title
+                            </p>
+                            <span style="color:var(--text-secondary); font-size:12px; white-space:nowrap; flex-shrink:0;">
+                                @GetRelativeTime(notification.CreatedAt)
+                            </span>
+                        </div>
+                        <p style="color:var(--text-secondary); font-size:13px; margin-top:4px; line-height:1.5;">
+                            @notification.Message
+                        </p>
+                    </div>
+                    @if (!notification.IsRead)
+                    {
+                        <div style="width:8px; height:8px; border-radius:50%; background:var(--accent-red); flex-shrink:0; margin-top:6px;"></div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .notification-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 16px 20px;
+        background-color: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .notification-item:hover {
+        background-color: var(--bg-hover);
+    }
+
+    .notification-unread {
+        border-left: 3px solid var(--accent-red);
+        background-color: rgba(246, 70, 93, 0.03);
+    }
+
+    .notification-unread:hover {
+        background-color: rgba(246, 70, 93, 0.06);
+    }
+
+    .notification-read {
+        opacity: 0.7;
+    }
+
+    .notification-read:hover {
+        opacity: 1;
+    }
+
+    .notification-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        flex-shrink: 0;
+    }
+
+    .notification-icon.info {
+        background-color: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    .notification-icon.success {
+        background-color: rgba(14, 203, 129, 0.1);
+        color: var(--accent-green);
+    }
+
+    .notification-icon.warning {
+        background-color: rgba(255, 193, 7, 0.1);
+        color: #ffc107;
+    }
+
+    .notification-icon.error {
+        background-color: rgba(246, 70, 93, 0.1);
+        color: var(--accent-red);
+    }
+
+    .notification-icon.transaction {
+        background-color: rgba(139, 92, 246, 0.1);
+        color: #8b5cf6;
+    }
+
+    .notification-icon.security {
+        background-color: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+    }
+
+    .notification-icon.default {
+        background-color: rgba(255, 255, 255, 0.05);
+        color: var(--text-secondary);
+    }
+</style>
+
+@code {
+    private List<NotificationDto> notifications = new();
+    private List<NotificationDto> filteredNotifications = new();
+    private string activeFilter = "all";
+    private int unreadCount = 0;
+    private bool loading = true;
+    private bool isProcessing = false;
+
+    private string alertMessage = string.Empty;
+    private bool alertSuccess = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadNotifications();
+    }
+
+    private async Task LoadNotifications()
+    {
+        loading = true;
+        try
+        {
+            notifications = await Api.GetNotificationsAsync();
+            unreadCount = await Api.GetUnreadCountAsync();
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load notifications: {ex.Message}", false);
+        }
+        loading = false;
+    }
+
+    private void SetFilter(string filter)
+    {
+        activeFilter = filter;
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        filteredNotifications = activeFilter == "unread"
+            ? notifications.Where(n => !n.IsRead).ToList()
+            : notifications.ToList();
+    }
+
+    private async Task HandleNotificationClick(NotificationDto notification)
+    {
+        if (notification.IsRead) return;
+
+        try
+        {
+            await Api.MarkNotificationReadAsync(notification.Id);
+            notification.IsRead = true;
+            unreadCount = Math.Max(0, unreadCount - 1);
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to mark notification as read: {ex.Message}", false);
+        }
+    }
+
+    private async Task MarkAllRead()
+    {
+        isProcessing = true;
+        try
+        {
+            await Api.MarkAllNotificationsReadAsync();
+            foreach (var n in notifications)
+            {
+                n.IsRead = true;
+            }
+            unreadCount = 0;
+            ApplyFilter();
+            ShowAlert("All notifications marked as read.", true);
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to mark all as read: {ex.Message}", false);
+        }
+        isProcessing = false;
+    }
+
+    private void ShowAlert(string message, bool success)
+    {
+        alertMessage = message;
+        alertSuccess = success;
+        StateHasChanged();
+    }
+
+    private string GetNotificationIcon(string type) => type?.ToLower() switch
+    {
+        "info" => "\u2139",
+        "success" => "\u2713",
+        "warning" => "\u26A0",
+        "error" or "danger" => "\u2717",
+        "transaction" or "payment" => "$",
+        "security" or "auth" => "*",
+        "kyc" => "#",
+        "transfer" => "\u21C4",
+        _ => "!"
+    };
+
+    private string GetIconClass(string type) => type?.ToLower() switch
+    {
+        "info" => "info",
+        "success" => "success",
+        "warning" => "warning",
+        "error" or "danger" => "error",
+        "transaction" or "payment" => "transaction",
+        "security" or "auth" => "security",
+        _ => "default"
+    };
+
+    private string GetRelativeTime(DateTime dateTime)
+    {
+        var span = DateTime.UtcNow - dateTime;
+
+        if (span.TotalMinutes < 1) return "Just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        if (span.TotalDays < 7) return $"{(int)span.TotalDays}d ago";
+        if (span.TotalDays < 30) return $"{(int)(span.TotalDays / 7)}w ago";
+        return dateTime.ToString("MMM dd, yyyy");
+    }
+}

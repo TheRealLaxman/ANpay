@@ -10,11 +10,13 @@ public class WalletService
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<WalletService> _logger;
+    private readonly LedgerService _ledgerService;
 
-    public WalletService(ApplicationDbContext context, ILogger<WalletService> logger)
+    public WalletService(ApplicationDbContext context, ILogger<WalletService> logger, LedgerService ledgerService)
     {
         _context = context;
         _logger = logger;
+        _ledgerService = ledgerService;
     }
 
     public async Task<WalletDto> CreateWalletAsync(string userId, CreateWalletDto dto)
@@ -110,6 +112,16 @@ public class WalletService
 
             _context.Transactions.Add(txRecord);
             await _context.SaveChangesAsync();
+
+            try
+            {
+                await _ledgerService.PostWalletDepositAsync(txRecord.Id, wallet.Id, dto.Amount, wallet.Currency);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to post ledger entry for deposit {TxId}", txRecord.Id);
+            }
+
             await transaction.CommitAsync();
 
             _logger.LogInformation("Deposit completed. Ref: {Ref}", txRecord.ReferenceNumber);
@@ -160,6 +172,16 @@ public class WalletService
 
             _context.Transactions.Add(txRecord);
             await _context.SaveChangesAsync();
+
+            try
+            {
+                await _ledgerService.PostWalletWithdrawalAsync(txRecord.Id, wallet.Id, dto.Amount, wallet.Currency);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to post ledger entry for withdrawal {TxId}", txRecord.Id);
+            }
+
             await transaction.CommitAsync();
 
             _logger.LogInformation("Withdrawal completed. Ref: {Ref}", txRecord.ReferenceNumber);
@@ -241,6 +263,16 @@ public class WalletService
             _context.Transactions.Add(outTransaction);
             _context.Transactions.Add(inTransaction);
             await _context.SaveChangesAsync();
+
+            try
+            {
+                await _ledgerService.PostTransferAsync(outTransaction.Id, sourceWallet.Id, destWallet.Id, dto.Amount, sourceWallet.Currency);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to post ledger entry for transfer {Ref}", referenceNumber);
+            }
+
             await transaction.CommitAsync();
 
             _logger.LogInformation("Transfer completed. Ref: {Ref}", referenceNumber);

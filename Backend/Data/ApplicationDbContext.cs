@@ -38,6 +38,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<MerchantSettlement> MerchantSettlements { get; set; }
     public DbSet<QrCode> QrCodes { get; set; }
     public DbSet<PaymentLink> PaymentLinks { get; set; }
+    public DbSet<Dispute> Disputes { get; set; }
+    public DbSet<DisputeMessage> DisputeMessages { get; set; }
+    public DbSet<FraudAlert> FraudAlerts { get; set; }
+    public DbSet<RiskScore> RiskScores { get; set; }
+    public DbSet<SystemSetting> SystemSettings { get; set; }
+    public DbSet<LoginHistory> LoginHistories { get; set; }
+    public DbSet<TrustedDevice> TrustedDevices { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -353,6 +360,97 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(pl => pl.CreatedById)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(pl => pl.LinkUrl);
+        });
+
+        // Dispute
+        builder.Entity<Dispute>(entity =>
+        {
+            entity.HasOne(d => d.User)
+                .WithMany()
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.Transaction)
+                .WithMany()
+                .HasForeignKey(d => d.TransactionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(d => d.AssignedTo)
+                .WithMany()
+                .HasForeignKey(d => d.AssignedToId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(d => d.UserId);
+            entity.HasIndex(d => d.Status);
+            entity.HasIndex(d => d.CreatedAt);
+        });
+
+        // DisputeMessage
+        builder.Entity<DisputeMessage>(entity =>
+        {
+            entity.HasOne(dm => dm.Dispute)
+                .WithMany(d => d.Messages)
+                .HasForeignKey(dm => dm.DisputeId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(dm => dm.Sender)
+                .WithMany()
+                .HasForeignKey(dm => dm.SenderId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // FraudAlert
+        builder.Entity<FraudAlert>(entity =>
+        {
+            entity.HasOne(fa => fa.User)
+                .WithMany()
+                .HasForeignKey(fa => fa.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(fa => fa.AssignedTo)
+                .WithMany()
+                .HasForeignKey(fa => fa.AssignedToId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(fa => fa.UserId);
+            entity.HasIndex(fa => fa.Status);
+            entity.HasIndex(fa => fa.CreatedAt);
+        });
+
+        // RiskScore
+        builder.Entity<RiskScore>(entity =>
+        {
+            entity.HasIndex(rs => new { rs.EntityType, rs.EntityId });
+            entity.HasIndex(rs => rs.CalculatedAt);
+        });
+
+        // SystemSetting
+        builder.Entity<SystemSetting>(entity =>
+        {
+            entity.HasIndex(ss => ss.Key).IsUnique();
+        });
+
+        // LoginHistory
+        builder.Entity<LoginHistory>(entity =>
+        {
+            entity.HasOne(lh => lh.User)
+                .WithMany()
+                .HasForeignKey(lh => lh.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(lh => lh.UserId);
+            entity.HasIndex(lh => lh.Timestamp);
+        });
+
+        // TrustedDevice
+        builder.Entity<TrustedDevice>(entity =>
+        {
+            entity.HasOne(td => td.User)
+                .WithMany()
+                .HasForeignKey(td => td.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(td => td.UserId);
         });
     }
 }

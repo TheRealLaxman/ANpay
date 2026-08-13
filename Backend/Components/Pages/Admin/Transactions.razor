@@ -1,6 +1,7 @@
 @page "/admin/transactions"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
+@inject ApiService Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 
@@ -14,23 +15,172 @@
     <div class="page-header">
         <div class="header-left">
             <h1>Transaction Overview</h1>
-            <p>View all transactions across the system</p>
+            <p>View and monitor all transactions across the system</p>
         </div>
         <div class="header-right">
             <a href="/admin/dashboard" class="btn btn-outline">Back</a>
         </div>
     </div>
 
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
+    <div class="grid grid-4" style="margin-bottom: 24px;">
+        <div class="card stat-card">
+            <div class="stat-icon green">$</div>
+            <div class="card-value">@stats.TotalBalance.ToString("N2")</div>
+            <div class="card-header">Total Balance</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-icon white">@stats.TodayTransactions</div>
+            <div class="card-header">Today Transactions</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-icon green">$@stats.TodayVolume.ToString("N2")</div>
+            <div class="card-header">Today Volume</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-icon red">@stats.PendingApprovals</div>
+            <div class="card-header">Pending Approvals</div>
+        </div>
+    </div>
+
     <div class="card">
-        <p style="color: var(--text-secondary);">Transaction reports API available at GET /api/report/transactions</p>
+        <div class="card-header">Recent Transactions</div>
+        <div class="table-filters">
+            <input class="form-control" placeholder="Search..." @bind="searchTerm" @bind:after="FilterTransactions" />
+            <select class="form-control" @bind="filterType" @bind:after="FilterTransactions" style="max-width: 200px;">
+                <option value="">All Types</option>
+                <option value="Deposit">Deposit</option>
+                <option value="Withdrawal">Withdrawal</option>
+                <option value="TransferIn">Transfer In</option>
+                <option value="TransferOut">Transfer Out</option>
+                <option value="Payment">Payment</option>
+                <option value="Refund">Refund</option>
+            </select>
+            <select class="form-control" @bind="filterStatus" @bind:after="FilterTransactions" style="max-width: 200px;">
+                <option value="">All Status</option>
+                <option value="Completed">Completed</option>
+                <option value="Pending">Pending</option>
+                <option value="Failed">Failed</option>
+                <option value="Cancelled">Cancelled</option>
+            </select>
+            <button class="btn btn-outline" @onclick="LoadData">Refresh</button>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Reference</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Balance Before</th>
+                    <th>Balance After</th>
+                    <th>Status</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var tx in filteredTransactions)
+                {
+                    <tr>
+                        <td>@tx.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td style="font-family: monospace; font-size: 12px;">@tx.ReferenceNumber</td>
+                        <td><span class="badge @GetTypeBadge(tx.Type)">@tx.Type</span></td>
+                        <td>@tx.Amount.ToString("N2")</td>
+                        <td>@tx.BalanceBefore.ToString("N2")</td>
+                        <td>@tx.BalanceAfter.ToString("N2")</td>
+                        <td><span class="badge @GetStatusBadge(tx.Status)">@tx.Status</span></td>
+                        <td>@tx.Description</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (!filteredTransactions.Any())
+        {
+            <p style="text-align:center; color: var(--text-secondary); padding: 32px;">No transactions found</p>
+        }
     </div>
 </div>
 
 @code {
+    private List<TransactionDto> allTransactions = new();
+    private List<TransactionDto> filteredTransactions = new();
+    private DashboardStatsDto stats = new();
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private string searchTerm = string.Empty;
+    private string filterType = string.Empty;
+    private string filterStatus = string.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadData();
     }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            stats = await Api.GetDashboardStatsAsync();
+            var branches = await Api.GetBranchesAsync();
+            foreach (var branch in branches)
+            {
+                try
+                {
+                    var branchDash = await Api.GetBranchDashboardAsync(branch.Id);
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+        FilterTransactions();
+    }
+
+    private void FilterTransactions()
+    {
+        var result = allTransactions.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+            result = result.Where(t => t.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                (t.ReferenceNumber != null && t.ReferenceNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)));
+        if (!string.IsNullOrWhiteSpace(filterType))
+            result = result.Where(t => t.Type.Equals(filterType, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(filterStatus))
+            result = result.Where(t => t.Status.Equals(filterStatus, StringComparison.OrdinalIgnoreCase));
+        filteredTransactions = result.OrderByDescending(t => t.CreatedAt).ToList();
+    }
+
+    private void ShowAlert(string msg, string type)
+    {
+        message = msg;
+        isSuccess = type == "success";
+    }
+
+    private string GetTypeBadge(string type) => type switch
+    {
+        "Deposit" => "badge-success",
+        "Withdrawal" => "badge-danger",
+        "TransferIn" => "badge-success",
+        "TransferOut" => "badge-warning",
+        "Payment" => "badge-info",
+        "Refund" => "badge-success",
+        _ => ""
+    };
+
+    private string GetStatusBadge(string status) => status switch
+    {
+        "Completed" => "badge-success",
+        "Failed" => "badge-danger",
+        "Pending" => "badge-warning",
+        "Cancelled" => "badge-danger",
+        _ => ""
+    };
 }

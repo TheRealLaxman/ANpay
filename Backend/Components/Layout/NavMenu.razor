@@ -29,6 +29,9 @@
             <a href="/admin/kyc" class="nav-item @(Nav.Uri.Contains("/admin/kyc") ? "active" : "")">
                 KYC
             </a>
+            <a href="/admin/audit-logs" class="nav-item @(Nav.Uri.Contains("/admin/audit") ? "active" : "")">
+                Audit Logs
+            </a>
             <a href="/admin/settings" class="nav-item @(Nav.Uri.Contains("/admin/settings") ? "active" : "")">
                 Settings
             </a>
@@ -43,6 +46,9 @@
             </a>
             <a href="/branch/reports" class="nav-item @(Nav.Uri.Contains("/branch/reports") ? "active" : "")">
                 Reports
+            </a>
+            <a href="/branch/daily-closing" class="nav-item @(Nav.Uri.Contains("/branch/daily-closing") ? "active" : "")">
+                Daily Closing
             </a>
         }
         else if (Auth.IsOfficial())
@@ -61,6 +67,21 @@
             </a>
             <a href="/customer/profile" class="nav-item @(Nav.Uri.Contains("/customer/profile") ? "active" : "")">
                 Profile
+            </a>
+            <a href="/customer/kyc" class="nav-item @(Nav.Uri.Contains("/customer/kyc") ? "active" : "")">
+                KYC
+            </a>
+            <a href="/customer/exchange" class="nav-item @(Nav.Uri.Contains("/customer/exchange") ? "active" : "")">
+                Exchange
+            </a>
+            <a href="/customer/qr" class="nav-item @(Nav.Uri.Contains("/customer/qr") ? "active" : "")">
+                QR Code
+            </a>
+            <a href="/customer/notifications" class="nav-item @(Nav.Uri.Contains("/customer/notifications") ? "active" : "")">
+                Notifications
+            </a>
+            <a href="/customer/support" class="nav-item @(Nav.Uri.Contains("/customer/support") ? "active" : "")">
+                Support
             </a>
         }
 

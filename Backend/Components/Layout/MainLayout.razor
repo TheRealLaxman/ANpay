@@ -3,37 +3,63 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 
-<div class="page">
-    @if (Auth.IsLoggedIn)
-    {
-        <div class="sidebar">
-            <NavMenu />
-        </div>
-    }
-
-    <main>
+@if (isInitialized)
+{
+    <div class="page">
         @if (Auth.IsLoggedIn)
         {
-            <div class="top-row">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <span style="color: var(--text-secondary);">ANpay</span>
-                    <span style="color: var(--text-secondary);">|</span>
-                    <span style="color: var(--accent-red); font-weight: 500;">@Auth.Role</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 16px;">
-                    <span>@Auth.GetDisplayName()</span>
-                </div>
+            <div class="sidebar">
+                <NavMenu />
             </div>
         }
 
-        <article class="content">
-            @Body
-        </article>
-    </main>
-</div>
+        <main>
+            @if (Auth.IsLoggedIn)
+            {
+                <div class="top-row">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="color: var(--text-secondary);">ANpay</span>
+                        <span style="color: var(--text-secondary);">|</span>
+                        <span style="color: var(--accent-red); font-weight: 500;">@Auth.Role</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <span>@Auth.GetDisplayName()</span>
+                    </div>
+                </div>
+            }
+
+            <article class="content">
+                @Body
+            </article>
+        </main>
+    </div>
+}
+else
+{
+    <div class="page" style="display:flex;align-items:center;justify-content:center;">
+        <div style="text-align:center;">
+            <div style="font-size:24px;font-weight:700;margin-bottom:8px;">AN<span style="color:var(--accent-red);">pay</span></div>
+            <p style="color:var(--text-secondary);">Loading...</p>
+        </div>
+    </div>
+}
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
     <span class="dismiss">X</span>
 </div>
+
+@code {
+    private bool isInitialized = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch { }
+        isInitialized = true;
+    }
+}

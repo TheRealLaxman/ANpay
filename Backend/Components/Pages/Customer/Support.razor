@@ -1,0 +1,375 @@
+@page "/customer/support"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    @if (!string.IsNullOrEmpty(alertMessage))
+    {
+        <div class="alert alert-@(alertSuccess ? "success" : "danger")">@alertMessage</div>
+    }
+
+    @if (selectedTicketId == null)
+    {
+        <header class="page-header">
+            <div class="header-left">
+                <h1>Support Tickets</h1>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-primary" @onclick="OpenCreateModal">Create Ticket</button>
+            </div>
+        </header>
+
+        @if (loading)
+        {
+            <div class="card" style="text-align:center; padding:48px;">
+                <p style="color:var(--text-secondary);">Loading tickets...</p>
+            </div>
+        }
+        else if (tickets.Count == 0)
+        {
+            <div class="card" style="text-align:center; padding:48px;">
+                <p style="color:var(--text-secondary); margin-bottom:16px;">You have no support tickets yet.</p>
+                <button class="btn btn-primary" @onclick="OpenCreateModal">Create your first ticket</button>
+            </div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Subject</th>
+                            <th>Category</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var ticket in tickets)
+                        {
+                            <tr style="cursor:pointer;" @onclick="() => ViewTicket(ticket.Id)">
+                                <td>@ticket.Subject</td>
+                                <td>@ticket.Category</td>
+                                <td>
+                                    <span class="badge @GetPriorityBadgeClass(ticket.Priority)">@ticket.Priority</span>
+                                </td>
+                                <td>
+                                    <span class="badge @GetStatusBadgeClass(ticket.Status)">@ticket.Status</span>
+                                </td>
+                                <td>@ticket.CreatedAt.ToString("MMM dd, yyyy HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else
+    {
+        <div style="max-width:800px; margin:0 auto;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px;">
+                <button class="btn btn-outline" style="padding:8px 12px;" @onclick="BackToList">&larr; Back</button>
+                <h1 style="font-size:24px; font-weight:600;">@currentTicket?.Subject</h1>
+            </div>
+
+            @if (loadingDetail)
+            {
+                <div class="card" style="text-align:center; padding:48px;">
+                    <p style="color:var(--text-secondary);">Loading ticket...</p>
+                </div>
+            }
+            else if (currentTicket != null)
+            {
+                <div style="display:flex; gap:12px; margin-bottom:24px; align-items:center;">
+                    <span class="badge @GetStatusBadgeClass(currentTicket.Status)">@currentTicket.Status</span>
+                    <span class="badge @GetPriorityBadgeClass(currentTicket.Priority)">@currentTicket.Priority</span>
+                    <span style="color:var(--text-secondary); font-size:14px; margin-left:auto;">
+                        Category: @currentTicket.Category
+                    </span>
+                </div>
+
+                <div class="card" style="margin-bottom:24px;">
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Subject</span>
+                        <span style="font-weight:500;">@currentTicket.Subject</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Category</span>
+                        <span style="font-weight:500;">@currentTicket.Category</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Priority</span>
+                        <span class="badge @GetPriorityBadgeClass(currentTicket.Priority)">@currentTicket.Priority</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Status</span>
+                        <span class="badge @GetStatusBadgeClass(currentTicket.Status)">@currentTicket.Status</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <span style="color:var(--text-secondary);">Description</span>
+                        <span style="font-weight:500; max-width:500px; text-align:right; white-space:pre-wrap;">@currentTicket.Description</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding:12px 0;">
+                        <span style="color:var(--text-secondary);">Created</span>
+                        <span style="font-weight:500;">@currentTicket.CreatedAt.ToString("MMM dd, yyyy HH:mm")</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-bottom:16px; font-size:16px;">Messages</h3>
+                    <div style="max-height:400px; overflow-y:auto; margin-bottom:20px; padding-right:8px;">
+                        @if (messages.Count == 0)
+                        {
+                            <p style="color:var(--text-secondary); text-align:center; padding:24px;">No messages yet. Start the conversation below.</p>
+                        }
+                        else
+                        {
+                            @foreach (var msg in messages)
+                            {
+                                <div style="padding:16px; border-bottom:1px solid var(--border-color); @(msg.IsInternal ? "background:rgba(255,193,7,0.05);" : "")">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                        <span style="font-weight:500;">
+                                            @msg.SenderName
+                                            @if (msg.IsInternal)
+                                            {
+                                                <span class="badge badge-warning" style="margin-left:8px;">Internal</span>
+                                            }
+                                        </span>
+                                        <span style="color:var(--text-secondary); font-size:12px;">@msg.CreatedAt.ToString("MMM dd, yyyy HH:mm")</span>
+                                    </div>
+                                    <p style="color:var(--text-primary); white-space:pre-wrap; line-height:1.6;">@msg.Content</p>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    @if (currentTicket.Status != "Closed" && currentTicket.Status != "Resolved")
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Reply</label>
+                            <textarea class="form-control" rows="3" placeholder="Type your message..." @bind="newMessage"></textarea>
+                        </div>
+                        <button class="btn btn-primary" @onclick="SendMessage" disabled="@string.IsNullOrWhiteSpace(newMessage)">
+                            Send Message
+                        </button>
+                    }
+                    else
+                    {
+                        <p style="color:var(--text-secondary); font-size:14px;">This ticket is @currentTicket.Status.ToLower(). Messaging is disabled.</p>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseCreateModal">
+        <div class="modal-content" @onclick:stopPropagation style="width:500px;">
+            <h3>Create Support Ticket</h3>
+            <div class="form-group">
+                <label class="form-label">Subject</label>
+                <input class="form-control" @bind="createSubject" placeholder="Brief summary of your issue" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" rows="4" @bind="createDescription" placeholder="Describe your issue in detail..."></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Category</label>
+                <select class="form-control" @bind="createCategory">
+                    <option value="General">General</option>
+                    <option value="TransactionIssue">Transaction Issue</option>
+                    <option value="AccountIssue">Account Issue</option>
+                    <option value="KycIssue">KYC Issue</option>
+                    <option value="PaymentProblem">Payment Problem</option>
+                    <option value="RefundRequest">Refund Request</option>
+                    <option value="SecurityConcern">Security Concern</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Priority</label>
+                <select class="form-control" @bind="createPriority">
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="SubmitTicket">Submit</button>
+                <button class="btn btn-outline" @onclick="CloseCreateModal">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<SupportTicketDto> tickets = new();
+    private List<TicketMessageDto> messages = new();
+
+    private Guid? selectedTicketId = null;
+    private SupportTicketDto? currentTicket = null;
+
+    private bool loading = false;
+    private bool loadingDetail = false;
+
+    private string alertMessage = string.Empty;
+    private bool alertSuccess = true;
+
+    private bool showCreateModal = false;
+    private string createSubject = string.Empty;
+    private string createDescription = string.Empty;
+    private string createCategory = "General";
+    private string createPriority = "Medium";
+
+    private string newMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadTickets();
+    }
+
+    private async Task LoadTickets()
+    {
+        loading = true;
+        try
+        {
+            tickets = await Api.GetMySupportTicketsAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load tickets: {ex.Message}", false);
+        }
+        loading = false;
+    }
+
+    private async Task ViewTicket(Guid ticketId)
+    {
+        selectedTicketId = ticketId;
+        loadingDetail = true;
+        try
+        {
+            var result = await Api.GetSupportTicketDetailAsync(ticketId);
+            currentTicket = result.Ticket;
+            messages = result.Messages ?? new();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load ticket: {ex.Message}", false);
+            BackToList();
+        }
+        loadingDetail = false;
+    }
+
+    private void BackToList()
+    {
+        selectedTicketId = null;
+        currentTicket = null;
+        messages.Clear();
+        newMessage = string.Empty;
+    }
+
+    private void OpenCreateModal()
+    {
+        createSubject = string.Empty;
+        createDescription = string.Empty;
+        createCategory = "General";
+        createPriority = "Medium";
+        showCreateModal = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        showCreateModal = false;
+    }
+
+    private async Task SubmitTicket()
+    {
+        if (string.IsNullOrWhiteSpace(createSubject))
+        {
+            ShowAlert("Subject is required.", false);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(createDescription))
+        {
+            ShowAlert("Description is required.", false);
+            return;
+        }
+
+        try
+        {
+            var dto = new CreateSupportTicketDto
+            {
+                Subject = createSubject,
+                Description = createDescription,
+                Category = createCategory,
+                Priority = createPriority
+            };
+            var created = await Api.CreateSupportTicketAsync(dto);
+            ShowAlert("Ticket created successfully.", true);
+            CloseCreateModal();
+            await ViewTicket(created.Id);
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to create ticket: {ex.Message}", false);
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(newMessage) || selectedTicketId == null)
+            return;
+
+        try
+        {
+            var msg = await Api.AddTicketMessageAsync(selectedTicketId.Value, new AddTicketMessageDto { Content = newMessage });
+            messages.Add(msg);
+            newMessage = string.Empty;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to send message: {ex.Message}", false);
+        }
+    }
+
+    private void ShowAlert(string message, bool success)
+    {
+        alertMessage = message;
+        alertSuccess = success;
+        StateHasChanged();
+    }
+
+    private string GetPriorityBadgeClass(string priority) => priority switch
+    {
+        "Urgent" => "badge-danger",
+        "High" => "badge-warning",
+        "Medium" => "badge-warning",
+        "Low" => "badge-success",
+        _ => ""
+    };
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Open" => "badge-success",
+        "InProgress" => "badge-warning",
+        "PendingResponse" => "badge-warning",
+        "Resolved" => "badge-success",
+        "Closed" => "badge-danger",
+        _ => ""
+    };
+}

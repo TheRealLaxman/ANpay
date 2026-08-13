@@ -1,6 +1,7 @@
 @page "/admin/users"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
+@inject ApiService Api
 @inject AuthState Auth
 @inject NavigationManager Nav
 
@@ -14,31 +15,312 @@
     <div class="page-header">
         <div class="header-left">
             <h1>User Management</h1>
-            <p>Manage all users in the system</p>
+            <p>Manage all users, employees, and branches</p>
         </div>
         <div class="header-right">
+            <button class="btn btn-primary" @onclick="OpenCreateUserModal">Create User</button>
             <a href="/admin/dashboard" class="btn btn-outline">Back to Dashboard</a>
         </div>
     </div>
 
-    <div class="card">
-        <p style="color: var(--text-secondary); margin-bottom: 16px;">User management APIs are ready. UI coming soon.</p>
-        <p style="color: var(--text-secondary); font-size: 14px;">Available APIs:</p>
-        <ul style="color: var(--text-secondary); font-size: 14px; margin-left: 20px;">
-            <li>GET /api/branch - List all branches</li>
-            <li>POST /api/branch - Create branch</li>
-            <li>GET /api/employee/branch/{id} - List employees</li>
-            <li>POST /api/employee - Create employee</li>
-            <li>GET /api/audit - View audit logs</li>
-        </ul>
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
+    <div class="grid grid-2" style="margin-bottom: 24px;">
+        <div class="card stat-card">
+            <div class="card-header">Total Branches</div>
+            <div class="card-value">@branches.Count</div>
+        </div>
+        <div class="card stat-card">
+            <div class="card-header">Active Branches</div>
+            <div class="card-value">@branches.Count(b => b.Status == "Active")</div>
+        </div>
     </div>
+
+    <div class="card" style="margin-bottom: 24px;">
+        <div class="card-header">Branches</div>
+        <div class="table-filters">
+            <input class="form-control" placeholder="Search branches..." @bind="branchSearch" />
+            <button class="btn btn-primary" @onclick="OpenCreateBranchModal">Add Branch</button>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>City</th>
+                    <th>Phone</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var branch in filteredBranches)
+                {
+                    <tr>
+                        <td>@branch.Name</td>
+                        <td>@branch.City</td>
+                        <td>@branch.Phone</td>
+                        <td><span class="badge @(branch.Status == "Active" ? "badge-success" : "badge-warning")">@branch.Status</span></td>
+                        <td>
+                            <button class="btn btn-outline" @onclick="() => ViewBranchEmployees(branch)">Employees</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (selectedBranch != null)
+    {
+        <div class="card">
+            <div class="card-header">Employees - @selectedBranch.Name</div>
+            <div class="table-filters">
+                <button class="btn btn-primary" @onclick="OpenCreateEmployeeModal">Add Employee</button>
+                <button class="btn btn-outline" @onclick="() => selectedBranch = null">Close</button>
+            </div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Sub-Role</th>
+                        <th>Code</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var emp in employees)
+                    {
+                        <tr>
+                            <td>@emp.FirstName @emp.LastName</td>
+                            <td>@emp.Email</td>
+                            <td><span class="badge badge-info">@emp.SubRole</span></td>
+                            <td>@emp.EmployeeCode</td>
+                            <td><span class="badge @(emp.IsActive ? "badge-success" : "badge-danger")">@(emp.IsActive ? "Active" : "Inactive")</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
+@if (showCreateUserModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateUserModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Create User</h3>
+            <div class="form-group">
+                <label class="form-label">First Name</label>
+                <input class="form-control" @bind="newUser.FirstName" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Last Name</label>
+                <input class="form-control" @bind="newUser.LastName" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input class="form-control" type="email" @bind="newUser.Email" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input class="form-control" @bind="newUser.Phone" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input class="form-control" type="password" @bind="newUser.Password" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateUser">Create</button>
+                <button class="btn btn-outline" @onclick="() => showCreateUserModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showCreateBranchModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateBranchModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Create Branch</h3>
+            <div class="form-group">
+                <label class="form-label">Branch Name</label>
+                <input class="form-control" @bind="newBranch.Name" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Address</label>
+                <input class="form-control" @bind="newBranch.Address" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">City</label>
+                <input class="form-control" @bind="newBranch.City" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input class="form-control" @bind="newBranch.Phone" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateBranch">Create</button>
+                <button class="btn btn-outline" @onclick="() => showCreateBranchModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showCreateEmployeeModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateEmployeeModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Add Employee</h3>
+            <div class="form-group">
+                <label class="form-label">Email (existing user)</label>
+                <input class="form-control" @bind="newEmployee.Email" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Sub-Role</label>
+                <select class="form-control" @bind="newEmployee.SubRole">
+                    <option value="Teller">Teller</option>
+                    <option value="CustomerService">Customer Service</option>
+                    <option value="Operations">Operations</option>
+                    <option value="Manager">Manager</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateEmployee">Create</button>
+                <button class="btn btn-outline" @onclick="() => showCreateEmployeeModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    private List<BranchDto> branches = new();
+    private List<BranchDto> filteredBranches = new();
+    private List<EmployeeDto> employees = new();
+    private BranchDto? selectedBranch;
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private string branchSearch = string.Empty;
+
+    private bool showCreateUserModal;
+    private bool showCreateBranchModal;
+    private bool showCreateEmployeeModal;
+
+    private CreateUserData newUser = new();
+    private CreateBranchData newBranch = new();
+    private CreateEmployeeData newEmployee = new();
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            branches = await Api.GetBranchesAsync() ?? new();
+            FilterBranches();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private void FilterBranches()
+    {
+        filteredBranches = string.IsNullOrWhiteSpace(branchSearch)
+            ? branches
+            : branches.Where(b => b.Name.Contains(branchSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private async Task ViewBranchEmployees(BranchDto branch)
+    {
+        selectedBranch = branch;
+        try { employees = await Api.GetEmployeesAsync(branch.Id); }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private void OpenCreateUserModal() { newUser = new(); showCreateUserModal = true; }
+    private void OpenCreateBranchModal() { newBranch = new(); showCreateBranchModal = true; }
+    private void OpenCreateEmployeeModal() { newEmployee = new(); showCreateEmployeeModal = true; }
+
+    private async Task HandleCreateUser()
+    {
+        try
+        {
+            await Api.RegisterAsync(new RegisterRequest
+            {
+                FirstName = newUser.FirstName,
+                LastName = newUser.LastName,
+                Email = newUser.Email,
+                Password = newUser.Password,
+                PhoneNumber = newUser.Phone
+            });
+            ShowAlert("User created successfully", "success");
+            showCreateUserModal = false;
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private async Task HandleCreateBranch()
+    {
+        try
+        {
+            await Api.CreateBranchAsync(newBranch.Name, newBranch.Address, newBranch.City, newBranch.Phone);
+            ShowAlert("Branch created successfully", "success");
+            showCreateBranchModal = false;
+            await LoadData();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private async Task HandleCreateEmployee()
+    {
+        if (selectedBranch == null) return;
+        try
+        {
+            await Api.CreateEmployeeAsync(selectedBranch.Id, newEmployee.Email, newEmployee.SubRole);
+            ShowAlert("Employee added successfully", "success");
+            showCreateEmployeeModal = false;
+            await ViewBranchEmployees(selectedBranch);
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private void ShowAlert(string msg, string type)
+    {
+        message = msg;
+        isSuccess = type == "success";
+        StateHasChanged();
+    }
+
+    private class CreateUserData
+    {
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+
+    private class CreateBranchData
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
+        public string City { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+    }
+
+    private class CreateEmployeeData
+    {
+        public string Email { get; set; } = string.Empty;
+        public string SubRole { get; set; } = "Teller";
     }
 }

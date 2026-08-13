@@ -1,8 +1,8 @@
 @page "/admin/settings"
 @rendermode InteractiveServer
 @using ANpay.Api.Components.Services
-@inject AuthState Auth
 @inject ApiService Api
+@inject AuthState Auth
 @inject NavigationManager Nav
 
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
@@ -15,48 +15,261 @@
     <div class="page-header">
         <div class="header-left">
             <h1>System Settings</h1>
-            <p>Configure fees, limits, and exchange rates</p>
+            <p>Manage fees, limits, exchange rates, and system configuration</p>
         </div>
         <div class="header-right">
-            <a href="/admin/dashboard" class="btn btn-outline">Back</a>
+            <a href="/admin/dashboard" class="btn btn-outline">Back to Dashboard</a>
         </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-        <div class="card">
-            <h3 style="font-size: 16px; margin-bottom: 16px;">Exchange Rates</h3>
-            @if (exchangeRates.Any())
-            {
-                @foreach (var rate in exchangeRates)
-                {
-                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
-                        <span>@rate.FromCurrency / @rate.ToCurrency</span>
-                        <span>Buy: @rate.BuyRate | Sell: @rate.SellRate</span>
-                    </div>
-                }
-            }
-            else
-            {
-                <p style="color: var(--text-secondary);">No exchange rates configured</p>
-            }
-        </div>
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
 
+    <div class="tabs" style="display: flex; gap: 8px; margin-bottom: 24px;">
+        <button class="btn @(activeTab == "fees" ? "btn-primary" : "btn-outline")" @onclick='() => activeTab = "fees"'>Fees</button>
+        <button class="btn @(activeTab == "limits" ? "btn-primary" : "btn-outline")" @onclick='() => activeTab = "limits"'>Limits</button>
+        <button class="btn @(activeTab == "exchange" ? "btn-primary" : "btn-outline")" @onclick='() => activeTab = "exchange"'>Exchange Rates</button>
+    </div>
+
+    @if (activeTab == "fees")
+    {
         <div class="card">
-            <h3 style="font-size: 16px; margin-bottom: 16px;">API Endpoints</h3>
-            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--text-secondary);">
-                <div>POST /api/fee - Create fee</div>
-                <div>GET /api/fee - List fees</div>
-                <div>POST /api/limit - Create limit</div>
-                <div>GET /api/limit - List limits</div>
-                <div>POST /api/exchange/rates - Set rates</div>
-                <div>GET /api/exchange/rates - List rates</div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Fee Configuration</span>
+                <button class="btn btn-primary" @onclick="OpenCreateFeeModal">Add Fee Rule</button>
+            </div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Applies To</th>
+                        <th>Value</th>
+                        <th>Min Fee</th>
+                        <th>Max Fee</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var fee in fees)
+                    {
+                        <tr>
+                            <td>@fee.Name</td>
+                            <td>@fee.Type</td>
+                            <td>@fee.AppliesTo</td>
+                            <td>@fee.Value</td>
+                            <td>@fee.MinFee.ToString("N2")</td>
+                            <td>@fee.MaxFee.ToString("N2")</td>
+                            <td><span class="badge @(fee.IsActive ? "badge-success" : "badge-danger")">@(fee.IsActive ? "Active" : "Inactive")</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (activeTab == "limits")
+    {
+        <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Transaction Limits</span>
+                <button class="btn btn-primary" @onclick="OpenCreateLimitModal">Add Limit</button>
+            </div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Role</th>
+                        <th>Limit Type</th>
+                        <th>Amount</th>
+                        <th>Currency</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var limit in limits)
+                    {
+                        <tr>
+                            <td>@limit.RoleName</td>
+                            <td>@limit.LimitType</td>
+                            <td>@limit.LimitAmount.ToString("N2")</td>
+                            <td>@limit.Currency</td>
+                            <td><span class="badge @(limit.IsActive ? "badge-success" : "badge-danger")">@(limit.IsActive ? "Active" : "Inactive")</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (activeTab == "exchange")
+    {
+        <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Exchange Rates</span>
+                <button class="btn btn-primary" @onclick="OpenCreateRateModal">Add Rate</button>
+            </div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Buy Rate</th>
+                        <th>Sell Rate</th>
+                        <th>Spread</th>
+                        <th>Last Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var rate in exchangeRates)
+                    {
+                        <tr>
+                            <td>@rate.FromCurrency</td>
+                            <td>@rate.ToCurrency</td>
+                            <td>@rate.BuyRate.ToString("N6")</td>
+                            <td>@rate.SellRate.ToString("N6")</td>
+                            <td>@((rate.SellRate - rate.BuyRate).ToString("N6"))</td>
+                            <td>@rate.LastUpdated.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (showCreateFeeModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateFeeModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Create Fee Rule</h3>
+            <div class="form-group">
+                <label class="form-label">Name</label>
+                <input class="form-control" @bind="newFee.Name" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Type</label>
+                <select class="form-control" @bind="newFee.Type">
+                    <option value="Percentage">Percentage</option>
+                    <option value="Fixed">Fixed</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Applies To</label>
+                <select class="form-control" @bind="newFee.AppliesTo">
+                    <option value="Deposit">Deposit</option>
+                    <option value="Withdrawal">Withdrawal</option>
+                    <option value="Transfer">Transfer</option>
+                    <option value="Exchange">Exchange</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Value</label>
+                <input class="form-control" type="number" step="0.01" @bind="newFee.Value" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Min Fee</label>
+                <input class="form-control" type="number" step="0.01" @bind="newFee.MinFee" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Max Fee</label>
+                <input class="form-control" type="number" step="0.01" @bind="newFee.MaxFee" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateFee">Create</button>
+                <button class="btn btn-outline" @onclick="() => showCreateFeeModal = false">Cancel</button>
             </div>
         </div>
     </div>
-</div>
+}
+
+@if (showCreateLimitModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateLimitModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Create Limit</h3>
+            <div class="form-group">
+                <label class="form-label">Role</label>
+                <select class="form-control" @bind="newLimit.RoleName">
+                    <option value="Customer">Customer</option>
+                    <option value="Official">Official</option>
+                    <option value="BranchAdmin">Branch Admin</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Limit Type</label>
+                <select class="form-control" @bind="newLimit.LimitType">
+                    <option value="DailyDeposit">Daily Deposit</option>
+                    <option value="DailyWithdrawal">Daily Withdrawal</option>
+                    <option value="DailyTransfer">Daily Transfer</option>
+                    <option value="MonthlyDeposit">Monthly Deposit</option>
+                    <option value="MonthlyWithdrawal">Monthly Withdrawal</option>
+                    <option value="MonthlyTransfer">Monthly Transfer</option>
+                    <option value="SingleTransaction">Single Transaction</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount</label>
+                <input class="form-control" type="number" step="0.01" @bind="newLimit.LimitAmount" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Currency</label>
+                <input class="form-control" @bind="newLimit.Currency" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateLimit">Create</button>
+                <button class="btn btn-outline" @onclick="() => showCreateLimitModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showCreateRateModal)
+{
+    <div class="modal-overlay" @onclick="() => showCreateRateModal = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>Add Exchange Rate</h3>
+            <div class="form-group">
+                <label class="form-label">From Currency</label>
+                <input class="form-control" @bind="newRate.FromCurrency" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">To Currency</label>
+                <input class="form-control" @bind="newRate.ToCurrency" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Buy Rate</label>
+                <input class="form-control" type="number" step="0.000001" @bind="newRate.BuyRate" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Sell Rate</label>
+                <input class="form-control" type="number" step="0.000001" @bind="newRate.SellRate" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreateRate">Create</button>
+                <button class="btn btn-outline" @onclick="() => showCreateRateModal = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
+    private string activeTab = "fees";
+    private string message = string.Empty;
+    private bool isSuccess = true;
+
+    private List<FeeDto> fees = new();
+    private List<LimitDto> limits = new();
     private List<ExchangeRateDto> exchangeRates = new();
+
+    private bool showCreateFeeModal;
+    private bool showCreateLimitModal;
+    private bool showCreateRateModal;
+
+    private CreateFeeData newFee = new();
+    private CreateLimitData newLimit = new();
+    private CreateRateData newRate = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -66,8 +279,85 @@
             Nav.NavigateTo("/login");
             return;
         }
-        Api.SetToken(Auth.Token);
-        try { exchangeRates = await Api.GetExchangeRatesAsync(); }
-        catch { }
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            fees = await Api.GetFeesAsync() ?? new();
+            limits = await Api.GetLimitsAsync() ?? new();
+            exchangeRates = await Api.GetExchangeRatesAsync() ?? new();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private void OpenCreateFeeModal() { newFee = new(); showCreateFeeModal = true; }
+    private void OpenCreateLimitModal() { newLimit = new(); showCreateLimitModal = true; }
+    private void OpenCreateRateModal() { newRate = new(); showCreateRateModal = true; }
+
+    private async Task HandleCreateFee()
+    {
+        try
+        {
+            await Api.CreateFeeAsync(newFee.Name, newFee.Type, newFee.AppliesTo, newFee.Value, newFee.MinFee, newFee.MaxFee);
+            ShowAlert("Fee rule created", "success");
+            showCreateFeeModal = false;
+            await LoadData();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private async Task HandleCreateLimit()
+    {
+        try
+        {
+            await Api.CreateLimitAsync(newLimit.RoleName, newLimit.LimitType, newLimit.LimitAmount, newLimit.Currency);
+            ShowAlert("Limit created", "success");
+            showCreateLimitModal = false;
+            await LoadData();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private async Task HandleCreateRate()
+    {
+        try
+        {
+            await Api.UpsertExchangeRateAsync(newRate.FromCurrency, newRate.ToCurrency, newRate.BuyRate, newRate.SellRate);
+            ShowAlert("Exchange rate created", "success");
+            showCreateRateModal = false;
+            await LoadData();
+        }
+        catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
+    }
+
+    private void ShowAlert(string msg, string type) { message = msg; isSuccess = type == "success"; }
+
+    private class CreateFeeData
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = "Percentage";
+        public string AppliesTo { get; set; } = "Transfer";
+        public decimal Value { get; set; }
+        public decimal MinFee { get; set; }
+        public decimal MaxFee { get; set; }
+    }
+
+    private class CreateLimitData
+    {
+        public string RoleName { get; set; } = "Customer";
+        public string LimitType { get; set; } = "DailyTransfer";
+        public decimal LimitAmount { get; set; }
+        public string Currency { get; set; } = "USD";
+    }
+
+    private class CreateRateData
+    {
+        public string FromCurrency { get; set; } = string.Empty;
+        public string ToCurrency { get; set; } = string.Empty;
+        public decimal BuyRate { get; set; }
+        public decimal SellRate { get; set; }
     }
 }

@@ -54,8 +54,12 @@ public enum TransactionType
 
 public enum TransactionStatus
 {
-    Pending = 0,
-    Completed = 1,
-    Failed = 2,
-    Cancelled = 3
+    Initiated = 0,
+    Pending = 1,
+    Processing = 2,
+    Completed = 3,
+    Failed = 4,
+    Cancelled = 5,
+    Reversed = 6,
+    Refunded = 7
 }

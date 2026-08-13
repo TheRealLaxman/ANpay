@@ -142,7 +142,7 @@ public class AuthService
         };
     }
 
-    public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
+    public async Task<AuthResponseDto> LoginAsync(LoginDto dto, string? ipAddress = null, string? userAgent = null)
     {
         _logger.LogInformation("Login attempt for email: {Email}", dto.Email);
 
@@ -161,6 +161,7 @@ public class AuthService
         if (!isValid)
         {
             _logger.LogWarning("Login failed - invalid password for: {Email}", dto.Email);
+            await RecordLoginAsync(user.Id, ipAddress, userAgent, false, "Invalid password");
             return new AuthResponseDto
             {
                 Success = false,
@@ -169,6 +170,7 @@ public class AuthService
         }
 
         _logger.LogInformation("User logged in successfully: {Email}", dto.Email);
+        await RecordLoginAsync(user.Id, ipAddress, userAgent, true);
 
         var token = GenerateJwtToken(user);
 
@@ -269,5 +271,99 @@ public class AuthService
             signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private async Task RecordLoginAsync(string userId, string? ipAddress, string? userAgent, bool isSuccess, string? failureReason = null)
+    {
+        try
+        {
+            var loginHistory = new LoginHistory
+            {
+                UserId = userId,
+                IPAddress = ipAddress,
+                UserAgent = userAgent,
+                IsSuccess = isSuccess,
+                FailureReason = failureReason
+            };
+            _context.LoginHistories.Add(loginHistory);
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record login history for user {UserId}", userId);
+        }
+    }
+
+    public async Task<List<LoginHistory>> GetLoginHistoryAsync(string userId, int limit = 20)
+    {
+        return await _context.LoginHistories
+            .Where(l => l.UserId == userId)
+            .OrderByDescending(l => l.Timestamp)
+            .Take(limit)
+            .ToListAsync();
+    }
+
+    public async Task<List<TrustedDevice>> GetActiveDevicesAsync(string userId)
+    {
+        return await _context.TrustedDevices
+            .Where(d => d.UserId == userId && d.IsActive)
+            .OrderByDescending(d => d.LastUsedAt)
+            .ToListAsync();
+    }
+
+    public async Task RevokeDeviceAsync(string userId, Guid deviceId)
+    {
+        var device = await _context.TrustedDevices
+            .FirstOrDefaultAsync(d => d.Id == deviceId && d.UserId == userId)
+            ?? throw new NotFoundException("Device not found");
+
+        device.IsActive = false;
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<string> GenerateOtpAsync(string userId)
+    {
+        var otp = new Random().Next(100000, 999999).ToString();
+        var setting = new SystemSetting
+        {
+            Key = $"OTP:{userId}",
+            Value = otp,
+            Category = "OTP",
+            Description = $"OTP for user {userId}, expires at {DateTime.UtcNow.AddMinutes(5):O}"
+        };
+
+        var existing = await _context.SystemSettings.FirstOrDefaultAsync(s => s.Key == $"OTP:{userId}");
+        if (existing != null)
+        {
+            existing.Value = otp;
+            existing.Description = setting.Description;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _context.SystemSettings.Add(setting);
+        }
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("OTP generated for user {UserId}", userId);
+        return otp;
+    }
+
+    public async Task<bool> VerifyOtpAsync(string userId, string otp)
+    {
+        var setting = await _context.SystemSettings.FirstOrDefaultAsync(s => s.Key == $"OTP:{userId}");
+        if (setting == null || setting.Value != otp) return false;
+
+        var desc = setting.Description ?? "";
+        if (desc.Contains("expires at"))
+        {
+            var expiryStr = desc.Split("expires at ").LastOrDefault();
+            if (DateTime.TryParse(expiryStr, out var expiry) && DateTime.UtcNow > expiry)
+                return false;
+        }
+
+        _context.SystemSettings.Remove(setting);
+        await _context.SaveChangesAsync();
+        return true;
     }
 }

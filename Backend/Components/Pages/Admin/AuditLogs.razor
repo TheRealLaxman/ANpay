@@ -1,0 +1,142 @@
+@page "/admin/audit-logs"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject ApiService Api
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Audit Logs</h1>
+            <p>View system activity and changes</p>
+        </div>
+        <div class="header-right">
+            <a href="/admin/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 24px;">
+        <div class="table-filters" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+            <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+                <label class="form-label">Action</label>
+                <input type="text" class="form-control" placeholder="Filter by action..." @bind="filterAction" @bind:event="oninput" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0; min-width: 150px;">
+                <label class="form-label">From</label>
+                <input type="date" class="form-control" @bind="filterFrom" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0; min-width: 150px;">
+                <label class="form-label">To</label>
+                <input type="date" class="form-control" @bind="filterTo" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <button class="btn btn-primary" @onclick="ApplyFilters">Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="card">
+            <p style="color: var(--text-secondary); text-align: center; padding: 24px;">Loading audit logs...</p>
+        </div>
+    }
+    else if (filteredLogs.Any())
+    {
+        <div class="card" style="overflow-x: auto;">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Entity</th>
+                        <th>Old Values</th>
+                        <th>New Values</th>
+                        <th>IP</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var log in filteredLogs)
+                    {
+                        <tr>
+                            <td style="white-space: nowrap;">@log.CreatedAt.ToString("MMM dd, yyyy HH:mm")</td>
+                            <td>@log.UserName</td>
+                            <td><span class="badge badge-warning">@log.Action</span></td>
+                            <td>@log.Entity</td>
+                            <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary);">@(string.IsNullOrEmpty(log.OldValues) ? "-" : log.OldValues)</td>
+                            <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary);">@(string.IsNullOrEmpty(log.NewValues) ? "-" : log.NewValues)</td>
+                            <td style="color: var(--text-secondary);">@(string.IsNullOrEmpty(log.IpAddress) ? "-" : log.IpAddress)</td>
+                            <td>
+                                @if (log.IsSuccess)
+                                {
+                                    <span class="badge badge-success">Success</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-danger">Fail</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <p style="color: var(--text-secondary); text-align: center; padding: 24px;">No audit logs found.</p>
+        </div>
+    }
+</div>
+
+@code {
+    private List<AuditLogDto> allLogs = new();
+    private List<AuditLogDto> filteredLogs = new();
+    private bool loading = true;
+    private string filterAction = string.Empty;
+    private DateTime? filterFrom;
+    private DateTime? filterTo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadLogs();
+    }
+
+    private async Task LoadLogs()
+    {
+        loading = true;
+        try
+        {
+            allLogs = await Api.GetAuditLogsAsync(skip: 0, take: 500);
+            ApplyFilters();
+        }
+        catch { }
+        loading = false;
+    }
+
+    private void ApplyFilters()
+    {
+        filteredLogs = allLogs.Where(log =>
+            (string.IsNullOrEmpty(filterAction) || log.Action.Contains(filterAction, StringComparison.OrdinalIgnoreCase)) &&
+            (!filterFrom.HasValue || log.CreatedAt >= filterFrom.Value) &&
+            (!filterTo.HasValue || log.CreatedAt <= filterTo.Value.AddDays(1))
+        ).ToList();
+    }
+}

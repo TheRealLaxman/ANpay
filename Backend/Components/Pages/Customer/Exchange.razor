@@ -1,0 +1,333 @@
+@page "/customer/exchange"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Exchange</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Dashboard</a>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
+    @if (loading)
+    {
+        <div class="card" style="text-align:center; padding:40px;">
+            <p style="color:var(--text-secondary);">Loading exchange data...</p>
+        </div>
+    }
+    else
+    {
+        <div class="card" style="margin-bottom:24px;">
+            <div class="card-header">Currency Exchange</div>
+
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">From Wallet</label>
+                    <select class="form-control" @bind="fromWalletId" @bind:after="OnSelectionChanged">
+                        <option value="">-- Select wallet --</option>
+                        @foreach (var w in wallets)
+                        {
+                            <option value="@w.Id">@w.WalletName (@w.Currency) - @w.Balance.ToString("N2")</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">To Wallet</label>
+                    <select class="form-control" @bind="toWalletId" @bind:after="OnSelectionChanged">
+                        <option value="">-- Select wallet --</option>
+                        @foreach (var w in wallets.Where(w => w.Id.ToString() != fromWalletId))
+                        {
+                            <option value="@w.Id">@w.WalletName (@w.Currency) - @w.Balance.ToString("N2")</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div style="text-align:center; margin:8px 0 16px;">
+                <button class="btn btn-secondary" style="border-radius:50%; width:40px; height:40px; padding:0; font-size:18px;" @onclick="SwapCurrencies" title="Swap currencies">&#8645;</button>
+            </div>
+
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Amount</label>
+                    <input class="form-control" type="number" step="0.01" min="0" @bind="amount" @bind:after="OnAmountChanged" placeholder="Enter amount to exchange" />
+                    @if (fromWallet != null)
+                    {
+                        <small style="color:var(--text-secondary); margin-top:4px; display:block;">Available: @fromWallet.Balance.ToString("N2") @fromWallet.Currency</small>
+                    }
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Estimated Receive</label>
+                    <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:4px; padding:16px; text-align:center; min-height:48px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                        <span style="font-size:24px; font-weight:600;">@estimatedReceive.ToString("N4")</span>
+                        <span style="color:var(--text-secondary);">@(toWallet?.Currency ?? "")</span>
+                    </div>
+                </div>
+            </div>
+
+            @if (rateInfo != null)
+            {
+                <div style="background:var(--bg-primary); border-radius:4px; padding:12px 16px; margin-bottom:12px; font-size:14px;">
+                    <span style="color:var(--text-secondary);">Rate: </span>
+                    <span style="font-weight:500;">1 @rateInfo.FromCurrency = @rateInfo.BuyRate.ToString("N6") @rateInfo.ToCurrency</span>
+                    <span style="color:var(--text-secondary); margin-left:16px;">
+                        (Buy: @rateInfo.BuyRate.ToString("N6") / Sell: @rateInfo.SellRate.ToString("N6"))
+                    </span>
+                </div>
+            }
+
+            @if (quote != null)
+            {
+                <div style="background:var(--bg-primary); border-radius:4px; padding:12px 16px; margin-bottom:16px; font-size:14px;">
+                    <span style="color:var(--text-secondary);">Fee: </span>
+                    <span style="font-weight:500;">@quote.Fee.ToString("N2") @fromWallet?.Currency</span>
+                    <span style="color:var(--text-secondary); margin-left:16px;">Expires: @quote.ExpiresAt.ToString("HH:mm:ss")</span>
+                </div>
+            }
+
+            <button class="btn btn-success" style="width:100%;" @onclick="ExecuteExchange" disabled="@(isProcessing || !canExchange)">
+                @if (isProcessing)
+                {
+                    <span class="spinner"></span>
+                    <span>Processing...</span>
+                }
+                else
+                {
+                    <span>Confirm Exchange</span>
+                }
+            </button>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Exchange Rates</div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Buy Rate</th>
+                        <th>Sell Rate</th>
+                        <th>Spread</th>
+                        <th>Last Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (rates.Any())
+                    {
+                        @foreach (var rate in rates)
+                        {
+                            <tr>
+                                <td><span class="badge badge-success">@rate.FromCurrency</span></td>
+                                <td><span class="badge badge-warning">@rate.ToCurrency</span></td>
+                                <td>@rate.BuyRate.ToString("N6")</td>
+                                <td>@rate.SellRate.ToString("N6")</td>
+                                <td>@((rate.SellRate - rate.BuyRate).ToString("N6"))</td>
+                                <td>@rate.LastUpdated.ToString("MMM dd, yyyy HH:mm")</td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="6" style="text-align:center; color:var(--text-secondary); padding:24px;">No exchange rates available</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<WalletDto> wallets = new();
+    private List<ExchangeRateDto> rates = new();
+
+    private string fromWalletId = string.Empty;
+    private string toWalletId = string.Empty;
+    private decimal amount;
+    private decimal estimatedReceive;
+
+    private WalletDto? fromWallet => wallets.FirstOrDefault(w => w.Id.ToString() == fromWalletId);
+    private WalletDto? toWallet => wallets.FirstOrDefault(w => w.Id.ToString() == toWalletId);
+
+    private ExchangeRateDetailDto? rateInfo;
+    private ExchangeQuoteDto? quote;
+
+    private bool loading = true;
+    private bool isProcessing;
+    private bool canExchange;
+    private string message = string.Empty;
+    private bool isSuccess = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            loading = true;
+            var walletsTask = Api.GetWalletsAsync();
+            var ratesTask = Api.GetExchangeRatesAsync();
+            await Task.WhenAll(walletsTask, ratesTask);
+            wallets = walletsTask.Result ?? new();
+            rates = ratesTask.Result ?? new();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to load exchange data: {ex.Message}", false);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task OnSelectionChanged()
+    {
+        UpdateCanExchange();
+        await RefreshRateAndQuote();
+    }
+
+    private async Task OnAmountChanged()
+    {
+        UpdateCanExchange();
+        await RefreshQuote();
+    }
+
+    private void UpdateCanExchange()
+    {
+        canExchange = !string.IsNullOrEmpty(fromWalletId)
+            && !string.IsNullOrEmpty(toWalletId)
+            && fromWalletId != toWalletId
+            && amount > 0
+            && fromWallet != null
+            && amount <= fromWallet.Balance;
+    }
+
+    private async Task RefreshRateAndQuote()
+    {
+        if (string.IsNullOrEmpty(fromWalletId) || string.IsNullOrEmpty(toWalletId) || fromWalletId == toWalletId)
+        {
+            rateInfo = null;
+            quote = null;
+            estimatedReceive = 0;
+            return;
+        }
+
+        try
+        {
+            var fromCurrency = fromWallet?.Currency;
+            var toCurrency = toWallet?.Currency;
+            if (string.IsNullOrEmpty(fromCurrency) || string.IsNullOrEmpty(toCurrency)) return;
+
+            rateInfo = await Api.GetExchangeRateAsync(fromCurrency, toCurrency);
+
+            if (amount > 0)
+            {
+                await RefreshQuote();
+            }
+        }
+        catch
+        {
+            rateInfo = null;
+        }
+    }
+
+    private async Task RefreshQuote()
+    {
+        if (string.IsNullOrEmpty(fromWalletId) || string.IsNullOrEmpty(toWalletId)
+            || fromWalletId == toWalletId || amount <= 0)
+        {
+            quote = null;
+            estimatedReceive = 0;
+            return;
+        }
+
+        try
+        {
+            var fromCurrency = fromWallet?.Currency;
+            var toCurrency = toWallet?.Currency;
+            if (string.IsNullOrEmpty(fromCurrency) || string.IsNullOrEmpty(toCurrency)) return;
+
+            quote = await Api.GetExchangeQuoteAsync(fromCurrency, toCurrency, amount);
+            estimatedReceive = quote.ConvertedAmount;
+        }
+        catch
+        {
+            quote = null;
+            estimatedReceive = 0;
+        }
+    }
+
+    private async Task SwapCurrencies()
+    {
+        var temp = fromWalletId;
+        fromWalletId = toWalletId;
+        toWalletId = temp;
+        await OnSelectionChanged();
+    }
+
+    private async Task ExecuteExchange()
+    {
+        if (!canExchange || isProcessing) return;
+
+        isProcessing = true;
+        message = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var fromCurrency = fromWallet?.Currency;
+            var toCurrency = toWallet?.Currency;
+            if (string.IsNullOrEmpty(fromCurrency) || string.IsNullOrEmpty(toCurrency))
+            {
+                ShowAlert("Invalid wallet selection.", false);
+                return;
+            }
+
+            await Api.ExecuteExchangeAsync(fromWalletId, toWalletId, amount);
+            ShowAlert($"Successfully exchanged {amount:N2} {fromCurrency} to {estimatedReceive:N4} {toCurrency}!", true);
+
+            amount = 0;
+            estimatedReceive = 0;
+            quote = null;
+            await LoadData();
+            UpdateCanExchange();
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Exchange failed: {ex.Message}", false);
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void ShowAlert(string msg, bool success)
+    {
+        message = msg;
+        isSuccess = success;
+        StateHasChanged();
+    }
+}

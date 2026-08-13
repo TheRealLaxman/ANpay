@@ -1,0 +1,249 @@
+@page "/branch/daily-closing"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject AuthState Auth
+@inject ApiService Api
+@inject NavigationManager Nav
+
+@if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+{
+    Nav.NavigateTo("/login");
+    return;
+}
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h1>Daily Cash Closing</h1>
+            <p>Reconcile branch cash for today</p>
+        </div>
+        <div class="header-right">
+            <a href="/branch/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="card" style="margin-bottom: 16px;">
+            <p style="color: @(!isError ? "var(--color-success)" : "var(--color-error)");">@message</p>
+        </div>
+    }
+
+    @if (loading)
+    {
+        <div class="card"><p>Loading today's cash data...</p></div>
+    }
+    else if (todayData != null)
+    {
+        <div class="grid grid-3" style="margin-bottom: 24px;">
+            <div class="card">
+                <div class="card-header">Opening Balance</div>
+                <div class="card-value">₦@todayData.OpeningBalance.ToString("N2")</div>
+            </div>
+            <div class="card">
+                <div class="card-header">Total Deposits</div>
+                <div class="card-value" style="color: var(--color-success);">₦@todayData.TotalDeposits.ToString("N2")</div>
+            </div>
+            <div class="card">
+                <div class="card-header">Total Withdrawals</div>
+                <div class="card-value" style="color: var(--color-error);">₦@todayData.TotalWithdrawals.ToString("N2")</div>
+            </div>
+        </div>
+
+        <div class="grid grid-3" style="margin-bottom: 24px;">
+            <div class="card">
+                <div class="card-header">Adjustments</div>
+                <div class="card-value">₦@todayData.Adjustments.ToString("N2")</div>
+            </div>
+            <div class="card">
+                <div class="card-header">Expected Closing</div>
+                <div class="card-value">₦@todayData.ExpectedClosing.ToString("N2")</div>
+            </div>
+            <div class="card">
+                <div class="card-header">Difference</div>
+                <div class="card-value" style="color: @(todayData.Difference == 0 ? "var(--color-success)" : Math.Abs(todayData.Difference) > 1000 ? "var(--color-error)" : "var(--color-warning)");">
+                    ₦@todayData.Difference.ToString("N2")
+                </div>
+            </div>
+        </div>
+
+        @if (!todayData.IsClosed)
+        {
+            <div class="card" style="margin-bottom: 24px;">
+                <h3 style="font-size: 16px; margin-bottom: 16px;">Record Actual Closing Balance</h3>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label class="form-label">Actual Cash in Drawer (₦)</label>
+                    <input class="form-control" type="number" step="0.01" @bind="actualClosingInput" placeholder="Enter physical cash count" />
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn btn-primary" @onclick="SubmitClosing" disabled="@submitting">
+                        @(submitting ? "Submitting..." : "Submit Closing")
+                    </button>
+                    <button class="btn btn-outline" @onclick="Reconcile" disabled="@reconciling || todayData.Id == Guid.Empty">
+                        @(reconciling ? "Checking..." : "Reconcile Check")
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card" style="margin-bottom: 24px;">
+                <p style="color: var(--color-success);">Today's cash has been closed.</p>
+                <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                    <span style="color: var(--text-secondary);">Actual Closing</span>
+                    <span>₦@todayData.ActualClosing.ToString("N2")</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                    <span style="color: var(--text-secondary);">Reconciled</span>
+                    <span class="badge @(todayData.Reconciled ? "badge-success" : "badge-warning")">@(todayData.Reconciled ? "Yes" : "Pending")</span>
+                </div>
+            </div>
+        }
+
+        @if (history.Count > 0)
+        {
+            <div class="card">
+                <h3 style="font-size: 16px; margin-bottom: 16px;">Closing History</h3>
+                <div style="overflow-x: auto;">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Opening</th>
+                                <th>Deposits</th>
+                                <th>Withdrawals</th>
+                                <th>Expected</th>
+                                <th>Actual</th>
+                                <th>Difference</th>
+                                <th>Reconciled</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var h in history)
+                            {
+                                <tr>
+                                    <td>@h.Date.ToString("dd MMM yyyy")</td>
+                                    <td>₦@h.OpeningBalance.ToString("N2")</td>
+                                    <td style="color: var(--color-success);">₦@h.TotalDeposits.ToString("N2")</td>
+                                    <td style="color: var(--color-error);">₦@h.TotalWithdrawals.ToString("N2")</td>
+                                    <td>₦@h.ExpectedClosing.ToString("N2")</td>
+                                    <td>₦@h.ActualClosing.ToString("N2")</td>
+                                    <td style="color: @(h.Difference == 0 ? "var(--color-success)" : Math.Abs(h.Difference) > 1000 ? "var(--color-error)" : "var(--color-warning)");">
+                                        ₦@h.Difference.ToString("N2")
+                                    </td>
+                                    <td><span class="badge @(h.Reconciled ? "badge-success" : "badge-warning")">@(h.Reconciled ? "Yes" : "No")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="card">
+            <p style="color: var(--color-error);">@error</p>
+        </div>
+    }
+</div>
+
+@code {
+    private BranchDailyClosingDto? todayData;
+    private List<ClosingHistoryDto> history = new();
+    private bool loading = true;
+    private bool submitting = false;
+    private bool reconciling = false;
+    private string message = string.Empty;
+    private bool isError = false;
+    private string error = string.Empty;
+    private decimal actualClosingInput;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        Api.SetToken(Auth.Token);
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        error = string.Empty;
+        try
+        {
+            todayData = await Api.GetBranchDailyClosingAsync();
+            actualClosingInput = todayData.ExpectedClosing;
+            history = await Api.GetClosingHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to load cash data: {ex.Message}";
+        }
+        loading = false;
+    }
+
+    private async Task SubmitClosing()
+    {
+        if (actualClosingInput < 0)
+        {
+            ShowMessage("Actual closing balance cannot be negative.", true);
+            return;
+        }
+
+        submitting = true;
+        message = string.Empty;
+        try
+        {
+            await Api.SubmitClosingAsync(actualClosingInput);
+            ShowMessage("Closing balance recorded successfully.", false);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Failed to submit closing: {ex.Message}", true);
+        }
+        submitting = false;
+    }
+
+    private async Task Reconcile()
+    {
+        if (todayData == null || todayData.Id == Guid.Empty)
+        {
+            ShowMessage("No closing record to reconcile.", true);
+            return;
+        }
+
+        reconciling = true;
+        message = string.Empty;
+        try
+        {
+            var result = await Api.ReconcileClosingAsync(todayData.Id);
+            if (result.Reconciled)
+            {
+                ShowMessage("Reconciliation successful. Cash balances match.", false);
+            }
+            else
+            {
+                ShowMessage($"Reconciliation failed. Difference: ₦{result.Difference:N2}. Please recount.", true);
+            }
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Reconciliation error: {ex.Message}", true);
+        }
+        reconciling = false;
+    }
+
+    private void ShowMessage(string msg, bool error)
+    {
+        message = msg;
+        isError = error;
+    }
+}
