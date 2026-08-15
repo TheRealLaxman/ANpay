@@ -142,6 +142,15 @@
         }
     </div>
 
+    <!-- Biometric Login -->
+    <div class="card" style="margin-bottom:24px;">
+        <h3 style="font-size:16px; margin-bottom:16px;">Biometric Login</h3>
+        <p style="color:var(--text-secondary); font-size:14px; margin-bottom:12px;">
+            Sign in using your fingerprint, face, or security key instead of a password.
+        </p>
+        <a href="/customer/biometric" class="btn btn-primary">Manage Biometric Login</a>
+    </div>
+
     <!-- Login History -->
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -206,16 +215,26 @@
     private string? manualEntryKey;
     private string? verificationCode;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn)
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
         Api.SetToken(Auth.Token);
         await Task.WhenAll(LoadDevices(), LoadLoginHistory());
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadDevices()

@@ -5,9 +5,13 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -141,6 +145,7 @@
 }
 
 @code {
+    private bool isInitialized = false;
     private List<FraudAlertDto> allAlerts = new();
     private List<FraudAlertDto> filteredAlerts = new();
     private bool loading = true;
@@ -156,16 +161,27 @@
     private string assignEmail = string.Empty;
     private string updateStatusValue = string.Empty;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
         Api.SetToken(Auth.Token);
         await LoadAlerts();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadAlerts()

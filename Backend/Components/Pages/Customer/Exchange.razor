@@ -170,15 +170,30 @@
     private string message = string.Empty;
     private bool isSuccess = true;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
         if (!Auth.IsLoggedIn)
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        Api.SetToken(Auth.Token);
         await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadData()

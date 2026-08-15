@@ -5,9 +5,13 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -149,6 +153,7 @@
 </div>
 
 @code {
+    private bool isInitialized = false;
     private BranchDailyClosingDto? todayData;
     private List<ClosingHistoryDto> history = new();
     private bool loading = true;
@@ -159,16 +164,27 @@
     private string error = string.Empty;
     private decimal actualClosingInput;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
         Api.SetToken(Auth.Token);
         await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadData()

@@ -1,0 +1,129 @@
+@page "/customer/pin"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Transaction PIN</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
+    <div class="card" style="max-width:500px;">
+        <div style="text-align:center; padding:20px 0;">
+            <div style="font-size:48px; margin-bottom:12px;">@(Auth.IsPinSet ? "🔒" : "🔓")</div>
+            <h3 style="margin-bottom:8px;">@(Auth.IsPinSet ? "PIN is Set" : "No PIN Set")</h3>
+            <p style="color:var(--text-secondary); font-size:14px;">
+                @(Auth.IsPinSet
+                    ? "Your transaction PIN protects your payments. You can change it below."
+                    : "Set a 6-digit PIN to authorize transactions. This adds an extra layer of security.")
+            </p>
+        </div>
+    </div>
+
+    <div class="card" style="max-width:500px; margin-top:24px;">
+        <h3 style="font-size:16px; margin-bottom:16px;">@(Auth.IsPinSet ? "Change PIN" : "Set PIN")</h3>
+        <EditForm Model="pinModel" OnValidSubmit="HandleSetPin">
+            <div class="form-group">
+                <label class="form-label">Current PIN</label>
+                <input type="password" class="form-control" @bind="pinModel.CurrentPin"
+                       placeholder="Enter current PIN" maxlength="6"
+                       required="@(Auth.IsPinSet)" disabled="@(!Auth.IsPinSet)" />
+                @if (!Auth.IsPinSet)
+                {
+                    <small style="color:var(--text-secondary);">No current PIN needed for first-time setup</small>
+                }
+            </div>
+            <div class="form-group">
+                <label class="form-label">New PIN</label>
+                <input type="password" class="form-control" @bind="pinModel.NewPin"
+                       placeholder="Enter 6-digit PIN" maxlength="6" required />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Confirm New PIN</label>
+                <input type="password" class="form-control" @bind="pinModel.ConfirmPin"
+                       placeholder="Confirm 6-digit PIN" maxlength="6" required />
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;" disabled="@isSaving">
+                @(isSaving ? "Saving..." : (Auth.IsPinSet ? "Change PIN" : "Set PIN"))
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private PinModel pinModel = new();
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private bool isSaving = false;
+    private bool _shouldRedirect = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Auth.InitializeAsync(); } catch (InvalidOperationException) { }
+        if (!Auth.IsLoggedIn) { _shouldRedirect = true; return; }
+        Api.SetToken(Auth.Token);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect) Nav.NavigateTo("/login");
+    }
+
+    private async Task HandleSetPin()
+    {
+        if (string.IsNullOrWhiteSpace(pinModel.NewPin) || pinModel.NewPin.Length != 6)
+        {
+            message = "PIN must be exactly 6 digits.";
+            isSuccess = false;
+            return;
+        }
+        if (pinModel.NewPin != pinModel.ConfirmPin)
+        {
+            message = "PINs do not match.";
+            isSuccess = false;
+            return;
+        }
+        if (!pinModel.NewPin.All(char.IsDigit))
+        {
+            message = "PIN must contain only numbers.";
+            isSuccess = false;
+            return;
+        }
+
+        isSaving = true;
+        message = string.Empty;
+        try
+        {
+            await Api.SetTransactionPinAsync(pinModel.NewPin);
+            message = "Transaction PIN saved successfully!";
+            isSuccess = true;
+            pinModel = new();
+            Auth.IsPinSet = true;
+        }
+        catch (Exception ex)
+        {
+            message = $"Failed: {ex.Message}";
+            isSuccess = false;
+        }
+        isSaving = false;
+    }
+
+    private class PinModel
+    {
+        public string CurrentPin { get; set; } = string.Empty;
+        public string NewPin { get; set; } = string.Empty;
+        public string ConfirmPin { get; set; } = string.Empty;
+    }
+}

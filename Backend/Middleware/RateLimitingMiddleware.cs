@@ -95,17 +95,24 @@ public class RateLimitingMiddleware
 
     private static string GetClientIpAddress(HttpContext context)
     {
-        var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(forwardedFor))
+        // Only trust forwarded headers behind a reverse proxy
+        // In production, configure known proxy IPs and use the last trusted hop
+        var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        // If behind a reverse proxy, the RemoteIpAddress will be the proxy
+        // Only use X-Forwarded-For when RemoteIpAddress is a loopback address
+        if (context.Connection.RemoteIpAddress != null && System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
         {
-            var ip = forwardedFor.Split(',', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
-            if (!string.IsNullOrEmpty(ip)) return ip;
+            var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(forwardedFor))
+            {
+                // Take the first (original client) IP, not the last
+                var ip = forwardedFor.Split(',', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                if (!string.IsNullOrEmpty(ip)) return ip;
+            }
         }
 
-        var realIp = context.Request.Headers["X-Real-IP"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(realIp)) return realIp;
-
-        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return remoteIp;
     }
 
     private static void CleanupOldEntries(object? state)

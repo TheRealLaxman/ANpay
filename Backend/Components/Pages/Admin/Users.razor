@@ -5,9 +5,13 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -196,6 +200,7 @@
 }
 
 @code {
+    private bool isInitialized = false;
     private List<BranchDto> branches = new();
     private List<BranchDto> filteredBranches = new();
     private List<EmployeeDto> employees = new();
@@ -212,15 +217,31 @@
     private CreateBranchData newBranch = new();
     private CreateEmployeeData newEmployee = new();
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        Api.SetToken(Auth.Token);
+        isInitialized = true;
         await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadData()

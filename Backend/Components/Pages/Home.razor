@@ -1,4 +1,5 @@
 @page "/"
+@rendermode InteractiveServer
 @using ANpay.Api.Components.Services
 @inject AuthState Auth
 @inject NavigationManager Nav
@@ -8,7 +9,7 @@
     <div class="landing-hero">
         <div class="landing-nav">
             <div class="landing-logo">AN<span>pay</span></div>
-            <div style="display: flex; gap: 12px;">
+            <div style="display: flex; gap: 12px; align-items:center;">
                 <a href="/login" class="btn btn-outline">Sign In</a>
                 <a href="/register" class="btn btn-primary">Get Started</a>
             </div>
@@ -17,7 +18,7 @@
         <div class="hero-content">
             <h1 class="hero-title">The Future of<br /><span>Digital Payments</span></h1>
             <p class="hero-subtitle">Send, receive, and manage your money with ANpay. Fast, secure, and built for everyone.</p>
-            <div style="display: flex; gap: 16px; justify-content: center;">
+            <div style="display: flex; gap: 16px; justify-content: center; flex-wrap:wrap;">
                 <a href="/register" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">Create Free Account</a>
                 <a href="/login" class="btn btn-outline" style="padding: 16px 32px; font-size: 16px;">Sign In</a>
             </div>
@@ -36,17 +37,17 @@
             <div class="feature-card">
                 <div class="feature-icon red">🔒</div>
                 <h3>Bank-Grade Security</h3>
-                <p>Your money is protected with enterprise-level encryption and authentication.</p>
+                <p>Your money is protected with 2FA, transaction PINs, and device management.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon white">💳</div>
                 <h3>Multiple Wallets</h3>
-                <p>Organize your money across different wallets for different purposes.</p>
+                <p>Organize your money across different wallets and currencies.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon green">📊</div>
-                <h3>Track Everything</h3>
-                <p>Full transaction history with search, filters, and detailed insights.</p>
+                <h3>Spending Analytics</h3>
+                <p>Track where your money goes with visual charts and category breakdowns.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon red">👥</div>
@@ -56,7 +57,44 @@
             <div class="feature-card">
                 <div class="feature-icon white">🌍</div>
                 <h3>Multi-Currency</h3>
-                <p>Support for USD, EUR, GBP, NPR, INR and more currencies.</p>
+                <p>Support for USD, EUR, GBP and more with live exchange rates.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon green">📱</div>
+                <h3>QR Code Payments</h3>
+                <p>Scan and pay at stores instantly with secure QR codes.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon red">📤</div>
+                <h3>Export Statements</h3>
+                <p>Download your transaction history as CSV for accounting and records.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon white">🎯</div>
+                <h3>Transaction Limits</h3>
+                <p>View and manage your daily and monthly transaction limits.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- How It Works -->
+    <div class="landing-section">
+        <h2 class="section-title">How It Works</h2>
+        <div class="features-grid" style="max-width:900px; margin:0 auto;">
+            <div class="feature-card">
+                <div class="feature-icon green" style="font-size:24px; font-weight:700;">1</div>
+                <h3>Create Account</h3>
+                <p>Sign up in seconds with your email. No paperwork needed.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon red" style="font-size:24px; font-weight:700;">2</div>
+                <h3>Add Funds</h3>
+                <p>Deposit money into your wallet via branch or bank transfer.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon white" style="font-size:24px; font-weight:700;">3</div>
+                <h3>Start Transacting</h3>
+                <p>Send, receive, pay, and manage your money from anywhere.</p>
             </div>
         </div>
     </div>
@@ -83,6 +121,24 @@
         </div>
     </div>
 
+    <!-- FAQ Section -->
+    <div class="landing-section" style="max-width:800px; margin:0 auto;">
+        <h2 class="section-title">Frequently Asked Questions</h2>
+        @foreach (var faq in faqs)
+        {
+            <div class="card" style="margin-bottom:12px; cursor:pointer;" @onclick="() => faq.IsOpen = !faq.IsOpen">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-weight:500;">@faq.Question</span>
+                    <span style="color:var(--text-secondary); font-size:18px;">@(faq.IsOpen ? "−" : "+")</span>
+                </div>
+                @if (faq.IsOpen)
+                {
+                    <p style="color:var(--text-secondary); margin-top:12px; font-size:14px;">@faq.Answer</p>
+                }
+            </div>
+        }
+    </div>
+
     <!-- CTA Section -->
     <div class="landing-section">
         <div class="cta-card">
@@ -96,14 +152,34 @@
     <div class="landing-footer">
         <div class="landing-logo" style="margin-bottom: 16px;">AN<span>pay</span></div>
         <p style="color: var(--text-secondary); margin-bottom: 8px;">The Future of Digital Payments</p>
+        <div style="display:flex; gap:16px; justify-content:center; margin-bottom:12px;">
+            <a href="/login" style="color:var(--text-secondary); text-decoration:none; font-size:13px;">Sign In</a>
+            <a href="/register" style="color:var(--text-secondary); text-decoration:none; font-size:13px;">Register</a>
+            <a href="/forgot-password" style="color:var(--text-secondary); text-decoration:none; font-size:13px;">Forgot Password</a>
+        </div>
         <p style="color: var(--text-secondary); font-size: 12px;">&copy; 2026 ANpay. All rights reserved.</p>
     </div>
 </div>
 
 @code {
+    private List<FaqItem> faqs = new()
+    {
+        new("How do I create an account?", "Click 'Get Started' and fill in your details. You'll be ready to transact in seconds."),
+        new("Is my money safe?", "Yes. ANpay uses bank-grade encryption, 2FA, transaction PINs, and device management to protect your funds."),
+        new("Can I use multiple currencies?", "Yes. Create wallets in NGN, USD, EUR, GBP and more. Exchange rates are updated in real-time."),
+        new("How do I send money?", "Add a beneficiary (their wallet ID or email), then use the Transfer button on your dashboard."),
+        new("Can I download my transaction history?", "Yes. Go to Statement in your dashboard to export transactions as CSV for any date range."),
+        new("What are transaction limits?", "Limits depend on your account role (Customer, Official, etc.) and are shown on your Limits page."),
+        new("How do I set a transaction PIN?", "Go to Security in your dashboard and set a 6-digit PIN. This is required before confirming payments."),
+    };
+
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
         if (Auth.IsLoggedIn)
         {
             RedirectByRole();
@@ -120,5 +196,13 @@
             Nav.NavigateTo("/official/dashboard");
         else
             Nav.NavigateTo("/customer/dashboard");
+    }
+
+    private class FaqItem
+    {
+        public string Question { get; set; } = "";
+        public string Answer { get; set; } = "";
+        public bool IsOpen { get; set; }
+        public FaqItem(string q, string a) { Question = q; Answer = a; }
     }
 }

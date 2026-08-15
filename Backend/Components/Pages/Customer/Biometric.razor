@@ -1,0 +1,174 @@
+@page "/customer/biometric"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject WebAuthnService WebAuthn
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Biometric Login</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/security" class="btn btn-outline">Back to Security</a>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
+    @if (!webAuthnAvailable)
+    {
+        <div class="card" style="text-align:center; padding:40px;">
+            <div style="font-size:48px; margin-bottom:12px;">⚠️</div>
+            <h3>Not Supported</h3>
+            <p style="color:var(--text-secondary);">Your browser doesn't support biometric authentication (WebAuthn). Try Chrome, Edge, or Safari on a supported device.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card" style="max-width:500px; margin-bottom:24px;">
+            <div style="text-align:center; padding:20px 0;">
+                <div style="font-size:48px; margin-bottom:12px;">🔐</div>
+                <h3 style="margin-bottom:8px;">@(hasCredentials ? "Biometric Login Active" : "Enable Biometric Login")</h3>
+                <p style="color:var(--text-secondary); font-size:14px;">
+                    @(hasCredentials
+                        ? "You can sign in using your fingerprint, face, or security key."
+                        : "Register a biometric credential to sign in without a password.")
+                </p>
+            </div>
+        </div>
+
+        @if (!hasCredentials)
+        {
+            <div class="card" style="max-width:500px;">
+                <h3 style="font-size:16px; margin-bottom:16px;">Register Biometric</h3>
+                <p style="color:var(--text-secondary); font-size:14px; margin-bottom:16px;">
+                    Click below to register your device's biometric (fingerprint, face) as a login method.
+                </p>
+                <button class="btn btn-primary" style="width:100%;" @onclick="RegisterBiometric" disabled="@isProcessing">
+                    @(isProcessing ? "Registering..." : "Register Biometric Credential")
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="card" style="max-width:500px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                    <h3 style="font-size:16px;">Registered Devices</h3>
+                    <button class="btn btn-outline" style="padding:6px 12px; font-size:13px;" @onclick="LoadCredentials">Refresh</button>
+                </div>
+                @if (credentials.Count == 0)
+                {
+                    <p style="color:var(--text-secondary); text-align:center; padding:20px;">No credentials found.</p>
+                }
+                else
+                {
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Device</th>
+                                <th>Registered</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var cred in credentials)
+                            {
+                                <tr>
+                                    <td>@cred.DeviceName</td>
+                                    <td>@cred.CreatedAt.ToString("MMM dd, yyyy")</td>
+                                    <td>
+                                        <button class="btn btn-danger" style="padding:4px 10px; font-size:12px;"
+                                                @onclick="() => RemoveCredential(cred)">Remove</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<WebAuthnCredentialInfo> credentials = new();
+    private bool webAuthnAvailable = false;
+    private bool hasCredentials = false;
+    private bool isProcessing = false;
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private bool _shouldRedirect = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Auth.InitializeAsync(); } catch (InvalidOperationException) { }
+        if (!Auth.IsLoggedIn) { _shouldRedirect = true; return; }
+        Api.SetToken(Auth.Token);
+        webAuthnAvailable = await WebAuthn.IsWebAuthnAvailableAsync();
+        if (webAuthnAvailable) await LoadCredentials();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect) Nav.NavigateTo("/login");
+    }
+
+    private async Task LoadCredentials()
+    {
+        try
+        {
+            credentials = await WebAuthn.GetMyCredentialsAsync();
+            hasCredentials = credentials.Any();
+        }
+        catch { credentials = new(); hasCredentials = false; }
+    }
+
+    private async Task RegisterBiometric()
+    {
+        isProcessing = true;
+        message = string.Empty;
+        try
+        {
+            var result = await WebAuthn.RegisterAsync(Auth.UserId, Auth.Email, Auth.GetDisplayName());
+            if (result.Success)
+            {
+                message = "Biometric credential registered successfully!";
+                isSuccess = true;
+                await LoadCredentials();
+            }
+            else
+            {
+                message = $"Registration failed: {result.Error}";
+                isSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Failed: {ex.Message}";
+            isSuccess = false;
+        }
+        isProcessing = false;
+    }
+
+    private async Task RemoveCredential(WebAuthnCredentialInfo cred)
+    {
+        try
+        {
+            await WebAuthn.RemoveCredentialAsync(cred.Id);
+            message = "Credential removed.";
+            isSuccess = true;
+            await LoadCredentials();
+        }
+        catch (Exception ex)
+        {
+            message = $"Failed: {ex.Message}";
+            isSuccess = false;
+        }
+    }
+}

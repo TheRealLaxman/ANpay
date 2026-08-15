@@ -19,6 +19,8 @@ public class ApplicationUser : IdentityUser
     public bool IsActive { get; set; } = true;
     public AppUserRole Role { get; set; } = AppUserRole.Customer;
     public Guid? BranchId { get; set; }
+    public string? TransactionPinHash { get; set; }
+    public bool IsTransactionPinSet { get; set; } = false;
     public ICollection<Wallet> Wallets { get; set; } = new List<Wallet>();
     public EmployeeProfile? EmployeeProfile { get; set; }
     public KycProfile? KycProfile { get; set; }

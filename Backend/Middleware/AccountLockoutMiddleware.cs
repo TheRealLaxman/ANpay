@@ -73,6 +73,17 @@ public class AccountLockoutMiddleware
         newBodyStream.Seek(0, SeekOrigin.Begin);
         await newBodyStream.CopyToAsync(originalBodyStream);
 
+        // Record failed attempt on 401/403 login responses
+        if (IsLoginEndpoint(context) && (context.Response.StatusCode == 401 || context.Response.StatusCode == 403))
+        {
+            if (await ExtractEmailFromRequest(context) is { } loginEmail)
+            {
+                var normalizedEmail = loginEmail.ToLowerInvariant().Trim();
+                RecordFailedAttempt(normalizedEmail);
+            }
+        }
+
+        // Reset on successful login
         if (IsLoginEndpoint(context) && context.Response.StatusCode == 200)
         {
             if (await ExtractEmailFromRequest(context) is { } loginEmail)
@@ -137,7 +148,7 @@ public class AccountLockoutMiddleware
         }
     }
 
-    public void RecordFailedAttempt(string email)
+    public static void RecordFailedAttempt(string email)
     {
         var normalizedEmail = email.ToLowerInvariant().Trim();
         var tracker = _failedAttempts.GetOrAdd(normalizedEmail, _ => new FailedLoginTracker());
@@ -149,16 +160,14 @@ public class AccountLockoutMiddleware
 
             tracker.Attempts++;
 
-            if (tracker.Attempts >= _maxFailedAttempts)
+            if (tracker.Attempts >= 5) // default max
             {
-                tracker.LockoutEnd = DateTime.UtcNow.Add(_lockoutDuration);
-                _logger.LogWarning("Account locked: {Email}. Lockout ends at {LockoutEnd}",
-                    email, tracker.LockoutEnd);
+                tracker.LockoutEnd = DateTime.UtcNow.AddMinutes(15); // default lockout
             }
         }
     }
 
-    public void ResetFailedAttempts(string normalizedEmail)
+    public static void ResetFailedAttempts(string normalizedEmail)
     {
         if (_failedAttempts.TryGetValue(normalizedEmail, out var tracker))
         {

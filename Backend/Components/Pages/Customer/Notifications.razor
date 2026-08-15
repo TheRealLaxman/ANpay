@@ -190,20 +190,27 @@
 
     private HubConnection? _hubConnection;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
         if (!Auth.IsLoggedIn)
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        Api.SetToken(Auth.Token);
         await LoadNotifications();
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl($"{Nav.BaseUri}hubs/notifications", options =>
             {
-                options.AccessTokenProvider = () => Task.FromResult(Auth.Token);
+                options.AccessTokenProvider = () => Task.FromResult<string?>(Auth.Token);
             })
             .WithAutomaticReconnect()
             .Build();
@@ -227,6 +234,14 @@
         });
 
         await _hubConnection.StartAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadNotifications()

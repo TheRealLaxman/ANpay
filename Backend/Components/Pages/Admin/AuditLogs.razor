@@ -5,9 +5,13 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -100,6 +104,7 @@
 </div>
 
 @code {
+    private bool isInitialized = false;
     private List<AuditLogDto> allLogs = new();
     private List<AuditLogDto> filteredLogs = new();
     private bool loading = true;
@@ -107,16 +112,27 @@
     private DateTime? filterFrom;
     private DateTime? filterTo;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
         Api.SetToken(Auth.Token);
         await LoadLogs();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadLogs()

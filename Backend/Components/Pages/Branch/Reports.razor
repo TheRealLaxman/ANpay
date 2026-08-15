@@ -5,9 +5,13 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -108,21 +112,39 @@
 </div>
 
 @code {
+    private bool isInitialized = false;
     private DashboardStatsDto stats = new();
     private string message = string.Empty;
     private bool isSuccess = true;
     private DateTime startDate = DateTime.Today.AddDays(-30);
     private DateTime endDate = DateTime.Today;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
+        Api.SetToken(Auth.Token);
         await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadData()

@@ -1,0 +1,245 @@
+@page "/customer/scheduled"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Scheduled Transfers</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+            <button class="btn btn-primary" @onclick="OpenCreateModal">New Scheduled Transfer</button>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")">@message</div>
+    }
+
+    @if (loading)
+    {
+        <p style="text-align:center; padding:40px; color:var(--text-secondary);">Loading...</p>
+    }
+    else if (scheduledTransfers.Count == 0)
+    {
+        <div class="card" style="text-align:center; padding:40px;">
+            <p style="color:var(--text-secondary); margin-bottom:16px;">No scheduled transfers yet.</p>
+            <button class="btn btn-primary" @onclick="OpenCreateModal">Create Your First Schedule</button>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-2">
+            @foreach (var st in scheduledTransfers)
+            {
+                <div class="card stat-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="badge @GetStatusBadge(st.Status)">@st.Status</span>
+                        <span style="font-size:12px; color:var(--text-secondary);">@st.RecurrenceType</span>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <div style="font-size:14px; color:var(--text-secondary);">From: <strong>@st.SourceWalletName</strong></div>
+                        <div style="font-size:14px; color:var(--text-secondary);">To: <strong>@st.DestinationWalletName</strong></div>
+                    </div>
+                    <div class="card-value" style="font-size:20px;">@st.Amount.ToString("N2")</div>
+                    <div style="font-size:12px; color:var(--text-secondary); margin:4px 0;">@st.Description</div>
+                    <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+                        Next: @st.NextExecutionDate.ToString("MMM dd, yyyy") · Executed @st.ExecutionCount times
+                        @(st.MaxExecutions > 0 ? $"/ {st.MaxExecutions} max" : "")
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        @if (st.Status == "Active")
+                        {
+                            <button class="btn btn-outline" style="padding:4px 10px; font-size:12px;" @onclick="() => PauseTransfer(st.Id)">Pause</button>
+                        }
+                        else if (st.Status == "Paused")
+                        {
+                            <button class="btn btn-success" style="padding:4px 10px; font-size:12px;" @onclick="() => ResumeTransfer(st.Id)">Resume</button>
+                        }
+                        @if (st.Status is "Active" or "Paused" or "Failed")
+                        {
+                            <button class="btn btn-danger" style="padding:4px 10px; font-size:12px;" @onclick="() => CancelTransfer(st.Id)">Cancel</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseCreateModal">
+        <div class="modal-content" @onclick:stopPropagation>
+            <h3>New Scheduled Transfer</h3>
+            <div class="form-group">
+                <label class="form-label">From Wallet</label>
+                <select class="form-control" @bind="newModel.SourceWalletId">
+                    @foreach (var w in wallets)
+                    {
+                        <option value="@w.Id">@w.WalletName (@w.Currency)</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">To Wallet</label>
+                <select class="form-control" @bind="newModel.DestinationWalletId">
+                    <option value="">-- Select --</option>
+                    @foreach (var w in wallets)
+                    {
+                        <option value="@w.Id">@w.WalletName (@w.Currency)</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount</label>
+                <input type="number" class="form-control" @bind="newModel.Amount" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input class="form-control" @bind="newModel.Description" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Frequency</label>
+                <select class="form-control" @bind="newModel.RecurrenceType">
+                    <option value="Weekly">Weekly</option>
+                    <option value="Biweekly">Bi-weekly</option>
+                    <option value="Monthly">Monthly</option>
+                    <option value="Quarterly">Quarterly</option>
+                    <option value="Yearly">Yearly</option>
+                </select>
+            </div>
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Start Date</label>
+                    <input type="date" class="form-control" @bind="newModel.StartDate" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">End Date (optional)</label>
+                    <input type="date" class="form-control" @bind="newModel.EndDate" />
+                </div>
+            </div>
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Day of Month</label>
+                    <input type="number" class="form-control" @bind="newModel.DayOfMonth" min="1" max="28" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Max Executions (0=unlimited)</label>
+                    <input type="number" class="form-control" @bind="newModel.MaxExecutions" min="0" />
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="HandleCreate">Create Schedule</button>
+                <button class="btn btn-outline" @onclick="CloseCreateModal">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ScheduledTransferInfo> scheduledTransfers = new();
+    private List<WalletDto> wallets = new();
+    private bool loading = true;
+    private bool showCreateModal = false;
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private bool _shouldRedirect = false;
+
+    private CreateScheduledTransferRequest newModel = new() { StartDate = DateTime.UtcNow, RecurrenceType = "Monthly", DayOfMonth = 1 };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Auth.InitializeAsync(); } catch (InvalidOperationException) { }
+        if (!Auth.IsLoggedIn) { _shouldRedirect = true; return; }
+        Api.SetToken(Auth.Token);
+        await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect) Nav.NavigateTo("/login");
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        try
+        {
+            scheduledTransfers = await Api.GetScheduledTransfersAsync();
+            wallets = await Api.GetWalletsAsync() ?? new();
+        }
+        catch { }
+        loading = false;
+    }
+
+    private void OpenCreateModal()
+    {
+        newModel = new CreateScheduledTransferRequest
+        {
+            SourceWalletId = wallets.FirstOrDefault()?.Id ?? Guid.Empty,
+            RecurrenceType = "Monthly",
+            StartDate = DateTime.UtcNow,
+            DayOfMonth = 1
+        };
+        showCreateModal = true;
+    }
+
+    private void CloseCreateModal() { showCreateModal = false; }
+
+    private async Task HandleCreate()
+    {
+        if (newModel.SourceWalletId == Guid.Empty || newModel.DestinationWalletId == Guid.Empty || newModel.Amount <= 0)
+        {
+            message = "Please fill all fields with valid values.";
+            isSuccess = false;
+            return;
+        }
+        try
+        {
+            await Api.CreateScheduledTransferAsync(newModel);
+            message = "Scheduled transfer created!";
+            isSuccess = true;
+            showCreateModal = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            message = $"Failed: {ex.Message}";
+            isSuccess = false;
+        }
+    }
+
+    private async Task PauseTransfer(Guid id)
+    {
+        try { await Api.PauseScheduledTransferAsync(id); await LoadData(); }
+        catch (Exception ex) { message = ex.Message; isSuccess = false; }
+    }
+
+    private async Task ResumeTransfer(Guid id)
+    {
+        try { await Api.ResumeScheduledTransferAsync(id); await LoadData(); }
+        catch (Exception ex) { message = ex.Message; isSuccess = false; }
+    }
+
+    private async Task CancelTransfer(Guid id)
+    {
+        try { await Api.CancelScheduledTransferAsync(id); await LoadData(); }
+        catch (Exception ex) { message = ex.Message; isSuccess = false; }
+    }
+
+    private string GetStatusBadge(string status) => status switch
+    {
+        "Active" => "success",
+        "Paused" => "warning",
+        "Completed" => "info",
+        "Failed" => "danger",
+        "Cancelled" => "",
+        _ => ""
+    };
+}

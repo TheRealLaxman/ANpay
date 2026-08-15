@@ -12,6 +12,12 @@
         </div>
         <div class="header-right">
             <a href="/customer/profile" class="btn btn-outline">Profile</a>
+            <a href="/customer/security" class="btn btn-outline">Security</a>
+            <a href="/customer/analytics" class="btn btn-outline">Analytics</a>
+            <a href="/customer/statement" class="btn btn-outline">Statement</a>
+            <a href="/customer/limits" class="btn btn-outline">Limits</a>
+            <a href="/customer/scheduled" class="btn btn-outline">Scheduled</a>
+            <a href="/customer/pin" class="btn btn-outline">@(Auth.IsPinSet ? "Change PIN" : "Set PIN")</a>
             <button class="btn btn-danger" @onclick="Logout">Logout</button>
         </div>
     </header>
@@ -202,6 +208,20 @@
                 <label class="form-label">Description</label>
                 <input class="form-control" @bind="withdrawDescription" />
             </div>
+            @if (withdrawFee != null)
+            {
+                <div style="background:var(--bg-secondary); border-radius:8px; padding:12px; margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px;">
+                        <span>Amount:</span><span>@withdrawAmount.ToString("N2")</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px;">
+                        <span>Fee:</span><span>@withdrawFee.Fee.ToString("N2")</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:600; border-top:1px solid var(--border-color); padding-top:4px;">
+                        <span>Total:</span><span>@withdrawFee.Total.ToString("N2")</span>
+                    </div>
+                </div>
+            }
             <div class="modal-actions">
                 <button class="btn btn-primary" @onclick="HandleWithdraw">Confirm Withdrawal</button>
                 <button class="btn btn-outline" @onclick="CloseWithdrawModal">Cancel</button>
@@ -242,6 +262,20 @@
                 <label class="form-label">Description</label>
                 <input class="form-control" @bind="transferDescription" />
             </div>
+            @if (transferFee != null)
+            {
+                <div style="background:var(--bg-secondary); border-radius:8px; padding:12px; margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px;">
+                        <span>Amount:</span><span>@transferAmount.ToString("N2")</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:4px;">
+                        <span>Fee:</span><span>@transferFee.Fee.ToString("N2")</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:600; border-top:1px solid var(--border-color); padding-top:4px;">
+                        <span>Total:</span><span>@transferFee.Total.ToString("N2")</span>
+                    </div>
+                </div>
+            }
             <div class="modal-actions">
                 <button class="btn btn-success" @onclick="HandleTransfer">Confirm Transfer</button>
                 <button class="btn btn-outline" @onclick="CloseTransferModal">Cancel</button>
@@ -344,14 +378,34 @@
     private string searchTerm = string.Empty;
     private string filterType = string.Empty;
 
+    private FeeQuoteResult? transferFee;
+    private FeeQuoteResult? withdrawFee;
+
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn)
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        Api.SetToken(Auth.Token);
         await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadData()
@@ -359,6 +413,8 @@
         try
         {
             wallets = await Api.GetWalletsAsync() ?? new List<WalletDto>();
+            var profile = await Api.GetProfileAsync();
+            if (profile != null) Auth.IsPinSet = profile.IsTransactionPinSet;
             if (wallets.Any())
             {
                 selectedWalletId = wallets.First().Id;
@@ -450,6 +506,7 @@
         transferToWalletId = string.Empty;
         transferAmount = 0;
         transferDescription = string.Empty;
+        transferFee = null;
         showTransferModal = true;
     }
     private void CloseTransferModal() { showTransferModal = false; }
@@ -498,7 +555,12 @@
             ShowAlert("Please select a wallet and enter a valid amount.", "danger");
             return;
         }
-        ShowConfirmation($"Withdraw {withdrawAmount:N2} from wallet?", async () =>
+        try
+        {
+            withdrawFee = await Api.GetFeeQuoteAsync(withdrawAmount, "withdrawal");
+        }
+        catch { withdrawFee = null; }
+        ShowConfirmation($"Withdraw {withdrawAmount:N2}?{(withdrawFee != null ? $" (Fee: {withdrawFee.Fee:N2}, Total: {withdrawFee.Total:N2})" : "")}", async () =>
         {
             try
             {
@@ -525,7 +587,12 @@
             ShowAlert("Cannot transfer to the same wallet.", "danger");
             return;
         }
-        ShowConfirmation($"Transfer {transferAmount:N2}?", async () =>
+        try
+        {
+            transferFee = await Api.GetFeeQuoteAsync(transferAmount, "transfer");
+        }
+        catch { transferFee = null; }
+        ShowConfirmation($"Transfer {transferAmount:N2}?{(transferFee != null ? $" (Fee: {transferFee.Fee:N2}, Total: {transferFee.Total:N2})" : "")}", async () =>
         {
             try
             {

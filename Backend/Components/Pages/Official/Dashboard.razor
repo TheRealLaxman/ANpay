@@ -5,9 +5,13 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsOfficial())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -48,15 +52,33 @@
 </div>
 
 @code {
+    private bool isInitialized = false;
+
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsOfficial())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
         Api.SetToken(Auth.Token);
+        isInitialized = true;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task Logout()

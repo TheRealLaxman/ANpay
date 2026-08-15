@@ -172,14 +172,30 @@
     private string alertMessage = string.Empty;
     private bool alertSuccess = true;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
         if (!Auth.IsLoggedIn)
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        Api.SetToken(Auth.Token);
         await LoadHistory();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadHistory()

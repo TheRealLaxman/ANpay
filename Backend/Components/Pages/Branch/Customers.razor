@@ -1,8 +1,11 @@
 @page "/branch/customers"
+@rendermode InteractiveServer
 @using Microsoft.AspNetCore.Authorization
 @using ANpay.Api.Components.Services
 @using ANpay.Api.Models
 @inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
 @attribute [Authorize(Roles = "SuperAdmin,MainBranchAdmin,BranchAdmin")]
 
 <div class="page-container">
@@ -13,6 +16,13 @@
     @if (loading)
     {
         <div class="loading-state">Loading customers...</div>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="card">
+            <p style="color: var(--color-error);">@error</p>
+            <button class="btn btn-primary" @onclick="LoadData" style="margin-top: 12px;">Retry</button>
+        </div>
     }
     else
     {
@@ -62,6 +72,7 @@
 
 @code {
     private bool loading = true;
+    private string error = string.Empty;
     private List<BranchCustomerDto> customers = new();
     private List<BranchCustomerDto> filteredCustomers = new();
     private string searchTerm = string.Empty;
@@ -70,10 +81,24 @@
     {
         try
         {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
+        Api.SetToken(Auth.Token);
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        error = string.Empty;
+        try
+        {
             customers = await Api.GetAsync<List<BranchCustomerDto>>("api/branch/customers") ?? new();
             filteredCustomers = customers;
         }
-        catch { }
+        catch (Exception ex) { error = $"Failed to load customers: {ex.Message}"; }
         finally { loading = false; }
     }
 

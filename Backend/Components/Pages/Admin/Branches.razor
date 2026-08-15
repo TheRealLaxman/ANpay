@@ -5,9 +5,13 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -26,6 +30,13 @@
     @if (loading)
     {
         <div class="card"><p>Loading branches...</p></div>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="card">
+            <p style="color: var(--color-error);">@error</p>
+            <button class="btn btn-primary" @onclick="LoadBranches" style="margin-top: 12px;">Retry</button>
+        </div>
     }
     else
     {
@@ -87,6 +98,7 @@
 }
 
 @code {
+    private bool isInitialized = false;
     private List<BranchDto> branches = new();
     private bool loading = true;
     private bool showCreateModal = false;
@@ -95,24 +107,42 @@
     private string newCity = string.Empty;
     private string newPhone = string.Empty;
     private string alertMessage = string.Empty;
+    private string error = string.Empty;
+
+    private bool _shouldRedirect = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
         Api.SetToken(Auth.Token);
         await LoadBranches();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadBranches()
     {
         loading = true;
+        error = string.Empty;
         try { branches = await Api.GetBranchesAsync(); }
-        catch { }
+        catch (Exception ex) { error = $"Failed to load branches: {ex.Message}"; }
         loading = false;
     }
 

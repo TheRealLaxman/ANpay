@@ -36,4 +36,52 @@ public class AuthController : ControllerBase
             return Unauthorized(result);
         return Ok(result);
     }
+
+    [Authorize]
+    [HttpPost("transaction-pin/set")]
+    public async Task<IActionResult> SetTransactionPin([FromBody] SetPinDto dto)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+        await _authService.SetTransactionPinAsync(userId, dto.Pin);
+        return Ok(new { message = "Transaction PIN set successfully" });
+    }
+
+    [Authorize]
+    [HttpPost("transaction-pin/verify")]
+    public async Task<IActionResult> VerifyTransactionPin([FromBody] VerifyPinDto dto)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+        var valid = await _authService.VerifyTransactionPinAsync(userId, dto.Pin);
+        return Ok(new { valid });
+    }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
+    {
+        try
+        {
+            var token = await _authService.GeneratePasswordResetTokenAsync(dto.Email);
+            return Ok(new { message = "If the email exists, a reset link has been sent.", token });
+        }
+        catch
+        {
+            return Ok(new { message = "If the email exists, a reset link has been sent." });
+        }
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
+    {
+        await _authService.ResetPasswordAsync(dto.Email, dto.Token, dto.NewPassword);
+        return Ok(new { message = "Password reset successfully" });
+    }
+
+    private string? GetUserId()
+    {
+        return User.FindFirstValue(ClaimTypes.NameIdentifier);
+    }
 }

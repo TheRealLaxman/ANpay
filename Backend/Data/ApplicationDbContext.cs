@@ -48,6 +48,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<IdempotencyKey> IdempotencyKeys { get; set; }
     public DbSet<ReconciliationRecord> ReconciliationRecords { get; set; }
     public DbSet<ReconciliationTransaction> ReconciliationTransactions { get; set; }
+    public DbSet<ScheduledTransfer> ScheduledTransfers { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -170,7 +171,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(le => le.Transaction)
                 .WithMany()
                 .HasForeignKey(le => le.TransactionId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(le => le.DebitAccount)
                 .WithMany(a => a.DebitEntries)
@@ -383,7 +384,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(d => d.AssignedTo)
                 .WithMany()
                 .HasForeignKey(d => d.AssignedToId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(d => d.UserId);
             entity.HasIndex(d => d.Status);
@@ -485,6 +486,29 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(rt => rt.ReconciliationRecordId);
             entity.HasIndex(rt => rt.TransactionId);
+        });
+
+        // ScheduledTransfer
+        builder.Entity<ScheduledTransfer>(entity =>
+        {
+            entity.HasOne(st => st.User)
+                .WithMany()
+                .HasForeignKey(st => st.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(st => st.SourceWallet)
+                .WithMany()
+                .HasForeignKey(st => st.SourceWalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(st => st.DestinationWallet)
+                .WithMany()
+                .HasForeignKey(st => st.DestinationWalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(st => st.UserId);
+            entity.HasIndex(st => st.NextExecutionDate);
+            entity.HasIndex(st => st.Status);
         });
     }
 }

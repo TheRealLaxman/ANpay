@@ -18,6 +18,7 @@ public class AuthService
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly IConfiguration _configuration;
     private readonly ApplicationDbContext _context;
+    private readonly IPasswordHasher<ApplicationUser> _pinHasher;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -25,12 +26,14 @@ public class AuthService
         RoleManager<IdentityRole> roleManager,
         IConfiguration configuration,
         ApplicationDbContext context,
+        IPasswordHasher<ApplicationUser> pinHasher,
         ILogger<AuthService> logger)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _configuration = configuration;
         _context = context;
+        _pinHasher = pinHasher;
         _logger = logger;
     }
 
@@ -203,6 +206,8 @@ public class AuthService
             LastName = user.LastName,
             Email = user.Email ?? string.Empty,
             PhoneNumber = user.PhoneNumber ?? string.Empty,
+            BranchId = user.BranchId?.ToString(),
+            IsTransactionPinSet = user.IsTransactionPinSet,
             CreatedAt = user.CreatedAt
         };
     }
@@ -247,11 +252,57 @@ public class AuthService
         _logger.LogInformation("Password changed for user {UserId}", userId);
     }
 
+    public async Task SetTransactionPinAsync(string userId, string pin)
+    {
+        var user = await _userManager.FindByIdAsync(userId)
+            ?? throw new NotFoundException("User not found");
+
+        if (pin.Length != 6 || !pin.All(char.IsDigit))
+            throw new ValidationException("PIN must be exactly 6 digits");
+
+        user.TransactionPinHash = _pinHasher.HashPassword(user, pin);
+        user.IsTransactionPinSet = true;
+        await _userManager.UpdateAsync(user);
+        _logger.LogInformation("Transaction PIN set for user {UserId}", userId);
+    }
+
+    public async Task<bool> VerifyTransactionPinAsync(string userId, string pin)
+    {
+        var user = await _userManager.FindByIdAsync(userId)
+            ?? throw new NotFoundException("User not found");
+
+        if (!user.IsTransactionPinSet || string.IsNullOrEmpty(user.TransactionPinHash))
+            throw new ValidationException("Transaction PIN not set. Please set a PIN first.");
+
+        return _pinHasher.VerifyHashedPassword(user, user.TransactionPinHash, pin) == PasswordVerificationResult.Success;
+    }
+
+    public async Task<string> GeneratePasswordResetTokenAsync(string email)
+    {
+        var user = await _userManager.FindByEmailAsync(email)
+            ?? throw new NotFoundException("No account found with this email");
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        return token;
+    }
+
+    public async Task ResetPasswordAsync(string email, string token, string newPassword)
+    {
+        var user = await _userManager.FindByEmailAsync(email)
+            ?? throw new NotFoundException("No account found with this email");
+
+        var result = await _userManager.ResetPasswordAsync(user, token, newPassword);
+        if (!result.Succeeded)
+            throw new ValidationException(string.Join(", ", result.Errors.Select(e => e.Description)));
+
+        _logger.LogInformation("Password reset for user {UserId}", user.Id);
+    }
+
     private string GenerateJwtToken(ApplicationUser user)
     {
         var jwtSettings = _configuration.GetSection("JwtSettings");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Secret"]!));
-        var expires = DateTime.UtcNow.AddDays(Convert.ToDouble(jwtSettings["ExpirationInDays"]));
+        var expires = DateTime.UtcNow.AddMinutes(Convert.ToDouble(jwtSettings["ExpirationInMinutes"] ?? "15"));
 
         var claims = new List<Claim>
         {
@@ -323,7 +374,7 @@ public class AuthService
 
     public async Task<string> GenerateOtpAsync(string userId)
     {
-        var otp = new Random().Next(100000, 999999).ToString();
+        var otp = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 999999).ToString();
         var setting = new SystemSetting
         {
             Key = $"OTP:{userId}",

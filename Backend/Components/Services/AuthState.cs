@@ -14,6 +14,7 @@ public class AuthState
     public string Role { get; private set; } = string.Empty;
     public string FirstName { get; private set; } = string.Empty;
     public string LastName { get; private set; } = string.Empty;
+    public bool IsPinSet { get; set; }
 
     public event Action? OnChange;
 
@@ -25,17 +26,23 @@ public class AuthState
 
     public async Task InitializeAsync()
     {
-        Token = await _js.InvokeAsync<string>("localStorage.getItem", "token") ?? string.Empty;
-        Role = await _js.InvokeAsync<string>("localStorage.getItem", "role") ?? string.Empty;
-        Email = await _js.InvokeAsync<string>("localStorage.getItem", "email") ?? string.Empty;
-        FirstName = await _js.InvokeAsync<string>("localStorage.getItem", "firstName") ?? string.Empty;
-        LastName = await _js.InvokeAsync<string>("localStorage.getItem", "lastName") ?? string.Empty;
-        UserId = await _js.InvokeAsync<string>("localStorage.getItem", "userId") ?? string.Empty;
-
-        if (!string.IsNullOrEmpty(Token))
+        try
         {
-            IsLoggedIn = true;
-            _api.SetToken(Token);
+            Token = await _js.InvokeAsync<string>("localStorage.getItem", "token") ?? string.Empty;
+            Role = await _js.InvokeAsync<string>("localStorage.getItem", "role") ?? string.Empty;
+            Email = await _js.InvokeAsync<string>("localStorage.getItem", "email") ?? string.Empty;
+            FirstName = await _js.InvokeAsync<string>("localStorage.getItem", "firstName") ?? string.Empty;
+            LastName = await _js.InvokeAsync<string>("localStorage.getItem", "lastName") ?? string.Empty;
+            UserId = await _js.InvokeAsync<string>("localStorage.getItem", "userId") ?? string.Empty;
+
+            if (!string.IsNullOrEmpty(Token))
+            {
+                IsLoggedIn = true;
+                _api.SetToken(Token);
+            }
+        }
+        catch (InvalidOperationException)
+        {
         }
     }
 

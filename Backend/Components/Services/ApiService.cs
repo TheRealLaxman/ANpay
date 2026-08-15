@@ -33,15 +33,21 @@ public class ApiService
     public async Task<AuthResponse> LoginAsync(string email, string password)
     {
         var response = await _http.PostAsJsonAsync($"{_baseUrl}/auth/login", new { email, password });
-        var result = await response.Content.ReadFromJsonAsync<AuthResponse>();
-        return result!;
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<AuthResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (result == null)
+            throw new Exception("Invalid response from server");
+        return result;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
     {
         var response = await _http.PostAsJsonAsync($"{_baseUrl}/auth/register", request);
-        var result = await response.Content.ReadFromJsonAsync<AuthResponse>();
-        return result!;
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<AuthResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (result == null)
+            throw new Exception("Invalid response from server");
+        return result;
     }
 
     // Profile
@@ -145,6 +151,11 @@ public class ApiService
     public async Task<BranchDashboardDto> GetBranchDashboardAsync(Guid branchId)
     {
         return (await _http.GetFromJsonAsync<BranchDashboardDto>($"{_baseUrl}/branch/{branchId}/dashboard"))!;
+    }
+
+    public async Task<BranchDashboardDto> GetMyBranchDashboardAsync()
+    {
+        return (await _http.GetFromJsonAsync<BranchDashboardDto>($"{_baseUrl}/branch/my/dashboard"))!;
     }
 
     // Employees
@@ -436,6 +447,118 @@ public class ApiService
     {
         await _http.PostAsJsonAsync($"{_baseUrl}/profile/2fa/disable", new { });
     }
+
+    // Transaction PIN
+    public async Task SetTransactionPinAsync(string pin)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/auth/transaction-pin/set", new { pin });
+    }
+
+    public async Task<bool> VerifyTransactionPinAsync(string pin)
+    {
+        var result = await _http.PostAsJsonAsync($"{_baseUrl}/auth/transaction-pin/verify", new { pin });
+        var content = await result.Content.ReadFromJsonAsync<PinVerifyResult>();
+        return content?.Valid ?? false;
+    }
+
+    // Fee Quote
+    public async Task<FeeQuoteResult> GetFeeQuoteAsync(decimal amount, string type, string currency = "NGN")
+    {
+        return (await _http.PostAsJsonAsync($"{_baseUrl}/wallet/fee-quote", new { amount, type, currency }))
+            .Content.ReadFromJsonAsync<FeeQuoteResult>().Result!;
+    }
+
+    // Spending Analytics
+    public async Task<SpendingAnalytics> GetSpendingAnalyticsAsync(Guid walletId, int months = 6)
+    {
+        return (await _http.GetFromJsonAsync<SpendingAnalytics>($"{_baseUrl}/transaction/wallet/{walletId}/analytics?months={months}"))!;
+    }
+
+    // Transaction Limits
+    public async Task<TransactionLimitsResult> GetMyLimitsAsync()
+    {
+        return (await _http.GetFromJsonAsync<TransactionLimitsResult>($"{_baseUrl}/wallet/limits"))!;
+    }
+
+    // Statement Export - returns URL to download
+    public string GetExportUrl(Guid walletId, DateTime? from = null, DateTime? to = null)
+    {
+        var url = $"{_baseUrl}/transaction/wallet/{walletId}/export";
+        var params2 = new List<string>();
+        if (from.HasValue) params2.Add($"from={from.Value:yyyy-MM-dd}");
+        if (to.HasValue) params2.Add($"to={to.Value:yyyy-MM-dd}");
+        if (params2.Count > 0) url += "?" + string.Join("&", params2);
+        return url;
+    }
+
+    // Password Reset
+    public async Task<string> ForgotPasswordAsync(string email)
+    {
+        var result = await _http.PostAsJsonAsync($"{_baseUrl}/auth/forgot-password", new { email });
+        var content = await result.Content.ReadAsStringAsync();
+        return content;
+    }
+
+    // WebAuthn
+    public async Task<WebAuthnChallengeResult> GetWebAuthnChallengeAsync()
+    {
+        var response = await _http.GetAsync($"{_baseUrl}/webauthn/challenge");
+        return (await response.Content.ReadFromJsonAsync<WebAuthnChallengeResult>())!;
+    }
+
+    public async Task<WebAuthnChallengeResult> GetWebAuthnLoginChallengeAsync(string email)
+    {
+        var response = await _http.PostAsJsonAsync($"{_baseUrl}/webauthn/login-challenge", new { email });
+        return (await response.Content.ReadFromJsonAsync<WebAuthnChallengeResult>())!;
+    }
+
+    public async Task RegisterWebAuthnAsync(WebAuthnCredentialRequest credential)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/webauthn/register", credential);
+    }
+
+    public async Task<WebAuthnLoginResultResponse> VerifyWebAuthnAsync(WebAuthnVerifyRequest request)
+    {
+        var response = await _http.PostAsJsonAsync($"{_baseUrl}/webauthn/verify", request);
+        return (await response.Content.ReadFromJsonAsync<WebAuthnLoginResultResponse>())!;
+    }
+
+    public async Task<List<WebAuthnCredentialInfo>> GetMyWebAuthnCredentialsAsync()
+    {
+        return await _http.GetFromJsonAsync<List<WebAuthnCredentialInfo>>($"{_baseUrl}/webauthn/my") ?? new();
+    }
+
+    public async Task RemoveWebAuthnCredentialAsync(Guid id)
+    {
+        await _http.DeleteAsync($"{_baseUrl}/webauthn/{id}");
+    }
+
+    // Scheduled Transfers
+    public async Task<List<ScheduledTransferInfo>> GetScheduledTransfersAsync()
+    {
+        return await _http.GetFromJsonAsync<List<ScheduledTransferInfo>>($"{_baseUrl}/scheduledtransfer") ?? new();
+    }
+
+    public async Task<ScheduledTransferInfo> CreateScheduledTransferAsync(CreateScheduledTransferRequest request)
+    {
+        var response = await _http.PostAsJsonAsync($"{_baseUrl}/scheduledtransfer", request);
+        return (await response.Content.ReadFromJsonAsync<ScheduledTransferInfo>())!;
+    }
+
+    public async Task PauseScheduledTransferAsync(Guid id)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/scheduledtransfer/{id}/pause", new { });
+    }
+
+    public async Task ResumeScheduledTransferAsync(Guid id)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/scheduledtransfer/{id}/resume", new { });
+    }
+
+    public async Task CancelScheduledTransferAsync(Guid id)
+    {
+        await _http.PostAsJsonAsync($"{_baseUrl}/scheduledtransfer/{id}/cancel", new { });
+    }
 }
 
 public class TwoFactorSetupDto
@@ -598,6 +721,8 @@ public class UserProfile
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;
+    public string BranchId { get; set; } = string.Empty;
+    public bool IsTransactionPinSet { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -891,4 +1016,128 @@ public class LoginHistoryDto
     public string IpAddress { get; set; } = string.Empty;
     public string DeviceInfo { get; set; } = string.Empty;
     public bool IsSuccess { get; set; }
+}
+
+public class PinVerifyResult
+{
+    public bool Valid { get; set; }
+}
+
+public class FeeQuoteResult
+{
+    public decimal Amount { get; set; }
+    public decimal Fee { get; set; }
+    public decimal Total { get; set; }
+    public string Currency { get; set; } = string.Empty;
+}
+
+public class SpendingAnalytics
+{
+    public decimal TotalSpent { get; set; }
+    public decimal TotalReceived { get; set; }
+    public decimal AverageTransaction { get; set; }
+    public int TransactionCount { get; set; }
+    public List<CategoryBreakdown> ByCategory { get; set; } = new();
+    public List<MonthlySpending> MonthlyTrend { get; set; } = new();
+}
+
+public class CategoryBreakdown
+{
+    public string Category { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public int Count { get; set; }
+    public decimal Percentage { get; set; }
+}
+
+public class MonthlySpending
+{
+    public string Month { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+}
+
+public class TransactionLimitsResult
+{
+    public List<LimitItemDto> Limits { get; set; } = new();
+}
+
+public class LimitItemDto
+{
+    public string Type { get; set; } = string.Empty;
+    public decimal LimitAmount { get; set; }
+    public decimal Used { get; set; }
+    public decimal Remaining { get; set; }
+    public string Currency { get; set; } = string.Empty;
+}
+
+public class WebAuthnChallengeResult
+{
+    public string Challenge { get; set; } = string.Empty;
+    public string RpId { get; set; } = string.Empty;
+    public List<WebAuthnCredentialInfo> Credentials { get; set; } = new();
+}
+
+public class WebAuthnCredentialRequest
+{
+    public string CredentialId { get; set; } = string.Empty;
+    public string PublicKey { get; set; } = string.Empty;
+    public string DeviceName { get; set; } = string.Empty;
+    public int Counter { get; set; }
+}
+
+public class WebAuthnVerifyRequest
+{
+    public string CredentialId { get; set; } = string.Empty;
+    public string AuthenticatorData { get; set; } = string.Empty;
+    public string ClientDataJSON { get; set; } = string.Empty;
+    public string Signature { get; set; } = string.Empty;
+}
+
+public class WebAuthnLoginResultResponse
+{
+    public bool Success { get; set; }
+    public string Token { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string Error { get; set; } = string.Empty;
+}
+
+public class WebAuthnCredentialInfo
+{
+    public Guid Id { get; set; }
+    public string CredentialId { get; set; } = string.Empty;
+    public string DeviceName { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ScheduledTransferInfo
+{
+    public Guid Id { get; set; }
+    public string SourceWalletName { get; set; } = string.Empty;
+    public string DestinationWalletName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string RecurrenceType { get; set; } = string.Empty;
+    public DateTime StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public DateTime NextExecutionDate { get; set; }
+    public int ExecutionCount { get; set; }
+    public int MaxExecutions { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class CreateScheduledTransferRequest
+{
+    public Guid SourceWalletId { get; set; }
+    public Guid DestinationWalletId { get; set; }
+    public decimal Amount { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string RecurrenceType { get; set; } = "Monthly";
+    public DateTime StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public int DayOfMonth { get; set; } = 1;
+    public int MaxExecutions { get; set; } = 0;
 }

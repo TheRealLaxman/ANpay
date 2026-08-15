@@ -5,9 +5,13 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -36,11 +40,11 @@
             </div>
             <div class="stat-card">
                 <div class="stat-label">Today Deposits</div>
-                <div class="stat-value">₦@branchStats.TodayDeposits.ToString("N2")</div>
+                <div class="stat-value">$@branchStats.TodayDeposits.ToString("N2")</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Today Withdrawals</div>
-                <div class="stat-value">₦@branchStats.TodayWithdrawals.ToString("N2")</div>
+                <div class="stat-value">$@branchStats.TodayWithdrawals.ToString("N2")</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Today Transfers</div>
@@ -48,7 +52,7 @@
             </div>
             <div class="stat-card">
                 <div class="stat-label">Cash Balance</div>
-                <div class="stat-value">₦@branchStats.CashBalance.ToString("N2")</div>
+                <div class="stat-value">$@branchStats.CashBalance.ToString("N2")</div>
             </div>
             <div class="stat-card @(branchStats.PendingApprovals > 0 ? "stat-warning" : "")">
                 <div class="stat-label">Pending Approvals</div>
@@ -84,6 +88,7 @@
     {
         <div class="card">
             <p style="color: var(--color-error);">@error</p>
+            <button class="btn btn-primary" @onclick="LoadDashboard" style="margin-top: 12px;">Retry</button>
         </div>
     }
 </div>
@@ -92,25 +97,45 @@
     private BranchDashboardDto? branchStats;
     private bool loading = true;
     private string error = string.Empty;
+    private bool isInitialized = false;
+
+    private bool _shouldRedirect = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
         Api.SetToken(Auth.Token);
+        isInitialized = true;
         await LoadDashboard();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadDashboard()
     {
         loading = true;
+        error = string.Empty;
         try
         {
-            branchStats = await Api.GetBranchDashboardAsync(Guid.Empty);
+            // TODO: Get the actual branch ID from the user's claims/profile
+            // For now, the API should return the branch based on the authenticated user
+            branchStats = await Api.GetMyBranchDashboardAsync();
         }
         catch (Exception ex)
         {

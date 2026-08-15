@@ -57,6 +57,8 @@ public class GlobalExceptionMiddleware
             _logger.LogWarning(exception, "Handled exception: {Message}", exception.Message);
         }
 
+        // In production, only return generic messages for 500 errors
+        // For other errors, still return the message (validation errors, etc.)
         var message = _env.IsProduction() && statusCode == HttpStatusCode.InternalServerError
             ? "An internal error occurred"
             : exception.Message;

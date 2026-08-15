@@ -5,9 +5,13 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -40,7 +44,7 @@
             </div>
             <div class="stat-card">
                 <div class="stat-label">Total Balance</div>
-                <div class="stat-value">₦@stats.TotalBalance.ToString("N2")</div>
+                <div class="stat-value">$@stats.TotalBalance.ToString("N2")</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Active Branches</div>
@@ -52,11 +56,11 @@
             </div>
             <div class="stat-card">
                 <div class="stat-label">Today Volume</div>
-                <div class="stat-value">₦@stats.TodayVolume.ToString("N2")</div>
+                <div class="stat-value">$@stats.TodayVolume.ToString("N2")</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Month Volume</div>
-                <div class="stat-value">₦@stats.MonthVolume.ToString("N2")</div>
+                <div class="stat-value">$@stats.MonthVolume.ToString("N2")</div>
             </div>
             <div class="stat-card @(stats.PendingApprovals > 0 ? "stat-warning" : "")">
                 <div class="stat-label">Pending Approvals</div>
@@ -114,17 +118,33 @@
     private DashboardStatsDto? stats;
     private bool loading = true;
     private string error = string.Empty;
+    private bool isInitialized = false;
+    private bool _shouldRedirect = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
         Api.SetToken(Auth.Token);
+        isInitialized = true;
         await LoadStats();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadStats()

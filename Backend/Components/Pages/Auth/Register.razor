@@ -74,7 +74,12 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (Auth.IsLoggedIn)
         {
             Nav.NavigateTo("/customer/dashboard");
@@ -111,9 +116,13 @@
                 errorMessage = result.Message;
             }
         }
-        catch
+        catch (HttpRequestException ex)
         {
-            errorMessage = "Connection error. Please try again.";
+            errorMessage = $"Connection error: {ex.Message}. Please try again.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
         }
 
         isLoading = false;

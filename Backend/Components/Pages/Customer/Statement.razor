@@ -1,0 +1,101 @@
+@page "/customer/statement"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@using Microsoft.JSInterop
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Download Statement</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </header>
+
+    <div class="card" style="max-width:600px;">
+        <h3 style="font-size:16px; margin-bottom:16px;">Export Transactions</h3>
+        <p style="color:var(--text-secondary); font-size:14px; margin-bottom:20px;">
+            Download your transaction history as a CSV file.
+        </p>
+
+        <div class="form-group">
+            <label class="form-label">Wallet</label>
+            <select class="form-control" @bind="selectedWalletId">
+                @foreach (var w in wallets)
+                {
+                    <option value="@w.Id">@w.WalletName (@w.Currency)</option>
+                }
+            </select>
+        </div>
+
+        <div class="grid grid-2" style="margin-bottom:16px;">
+            <div class="form-group">
+                <label class="form-label">From Date</label>
+                <input type="date" class="form-control" @bind="fromDate" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">To Date</label>
+                <input type="date" class="form-control" @bind="toDate" />
+            </div>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;" @onclick="DownloadStatement" disabled="@(isDownloading || string.IsNullOrEmpty(selectedWalletId))">
+            @(isDownloading ? "Downloading..." : "Download CSV")
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-@(isSuccess ? "success" : "danger")" style="margin-top:16px;">@message</div>
+    }
+</div>
+
+@code {
+    private List<WalletDto> wallets = new();
+    private string selectedWalletId = string.Empty;
+    private DateTime? fromDate = DateTime.UtcNow.AddMonths(-3);
+    private DateTime? toDate = DateTime.UtcNow;
+    private bool isDownloading = false;
+    private string message = string.Empty;
+    private bool isSuccess = true;
+    private bool _shouldRedirect = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Auth.InitializeAsync(); } catch (InvalidOperationException) { }
+        if (!Auth.IsLoggedIn) { _shouldRedirect = true; return; }
+        Api.SetToken(Auth.Token);
+        wallets = await Api.GetWalletsAsync() ?? new();
+        if (wallets.Any()) selectedWalletId = wallets.First().Id.ToString();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect) Nav.NavigateTo("/login");
+    }
+
+    private async Task DownloadStatement()
+    {
+        if (string.IsNullOrEmpty(selectedWalletId)) return;
+        isDownloading = true;
+        message = string.Empty;
+        try
+        {
+            var url = Api.GetExportUrl(Guid.Parse(selectedWalletId), fromDate, toDate);
+            await JS.InvokeVoidAsync("window.open", url, "_blank");
+            message = "Statement downloaded.";
+            isSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            message = $"Failed: {ex.Message}";
+            isSuccess = false;
+        }
+        isDownloading = false;
+    }
+}

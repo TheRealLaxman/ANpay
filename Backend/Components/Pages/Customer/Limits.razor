@@ -1,0 +1,92 @@
+@page "/customer/limits"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Transaction Limits</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </header>
+
+    @if (loading)
+    {
+        <p style="text-align:center; padding:40px; color:var(--text-secondary);">Loading limits...</p>
+    }
+    else if (limits.Limits.Count == 0)
+    {
+        <div class="card" style="text-align:center; padding:40px;">
+            <p style="color:var(--text-secondary);">No transaction limits configured for your account.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-2">
+            @foreach (var limit in limits.Limits)
+            {
+                <div class="card stat-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="badge @GetTypeBadge(limit.Type)">@FormatType(limit.Type)</span>
+                        <span style="font-size:12px; color:var(--text-secondary);">@limit.Currency</span>
+                    </div>
+                    <div class="card-value" style="font-size:20px;">@limit.LimitAmount.ToString("N2")</div>
+                    <div class="card-header">Maximum</div>
+                    <div style="margin-top:12px;">
+                        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+                            <span>Used: @limit.Used.ToString("N2")</span>
+                            <span>Remaining: @limit.Remaining.ToString("N2")</span>
+                        </div>
+                        <div style="background:var(--border-color); border-radius:4px; height:6px;">
+                            @{ var pct = limit.LimitAmount > 0 ? Math.Min(100, limit.Used / limit.LimitAmount * 100) : 0; }
+                            <div style="width:@pct.ToString("F0")%; background:@(pct > 80 ? "var(--danger-color)" : "var(--primary-color)"); height:6px; border-radius:4px;"></div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private TransactionLimitsResult limits = new();
+    private bool loading = true;
+    private bool _shouldRedirect = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Auth.InitializeAsync(); } catch (InvalidOperationException) { }
+        if (!Auth.IsLoggedIn) { _shouldRedirect = true; return; }
+        Api.SetToken(Auth.Token);
+        try { limits = await Api.GetMyLimitsAsync(); }
+        catch { limits = new(); }
+        loading = false;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect) Nav.NavigateTo("/login");
+    }
+
+    private string FormatType(string type) => type switch
+    {
+        "DailyDeposit" => "Daily Deposit",
+        "DailyWithdrawal" => "Daily Withdrawal",
+        "DailyTransfer" => "Daily Transfer",
+        "MonthlyDeposit" => "Monthly Deposit",
+        "MonthlyWithdrawal" => "Monthly Withdrawal",
+        "MonthlyTransfer" => "Monthly Transfer",
+        "SingleTransaction" => "Per Transaction",
+        _ => type
+    };
+
+    private string GetTypeBadge(string type) => type.Contains("Deposit") ? "success"
+        : type.Contains("Withdrawal") ? "danger"
+        : type.Contains("Transfer") ? "warning"
+        : "info";
+}

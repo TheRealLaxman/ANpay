@@ -5,9 +5,13 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -25,6 +29,13 @@
     @if (loading)
     {
         <div class="card"><p>Loading approvals...</p></div>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="card">
+            <p style="color: var(--color-error);">@error</p>
+            <button class="btn btn-primary" @onclick="LoadApprovals" style="margin-top: 12px;">Retry</button>
+        </div>
     }
     else
     {
@@ -66,26 +77,45 @@
 </div>
 
 @code {
+    private bool isInitialized = false;
     private List<ApprovalDto> approvals = new();
     private bool loading = true;
+    private string error = string.Empty;
+
+    private bool _shouldRedirect = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
         Api.SetToken(Auth.Token);
         await LoadApprovals();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadApprovals()
     {
         loading = true;
+        error = string.Empty;
         try { approvals = await Api.GetPendingApprovalsAsync(); }
-        catch { }
+        catch (Exception ex) { error = $"Failed to load approvals: {ex.Message}"; }
         loading = false;
     }
 
@@ -96,7 +126,7 @@
             await Api.ApproveRequestAsync(id, "Approved by admin");
             await LoadApprovals();
         }
-        catch { }
+        catch (Exception ex) { error = $"Failed to approve: {ex.Message}"; }
     }
 
     private async Task Reject(Guid id)
@@ -106,6 +136,6 @@
             await Api.RejectRequestAsync(id, "Rejected by admin");
             await LoadApprovals();
         }
-        catch { }
+        catch (Exception ex) { error = $"Failed to reject: {ex.Message}"; }
     }
 }

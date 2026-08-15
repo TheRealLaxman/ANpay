@@ -1,0 +1,167 @@
+@page "/customer/analytics"
+@rendermode InteractiveServer
+@using ANpay.Api.Components.Services
+@inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <header class="page-header">
+        <div class="header-left">
+            <h1>Spending Analytics</h1>
+        </div>
+        <div class="header-right">
+            <a href="/customer/dashboard" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+    </header>
+
+    @if (loading)
+    {
+        <p style="text-align:center; padding:40px; color:var(--text-secondary);">Loading analytics...</p>
+    }
+    else if (analytics == null)
+    {
+        <div class="card" style="text-align:center; padding:40px;">
+            <p style="color:var(--text-secondary);">Select a wallet to view analytics.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-3" style="margin-bottom:24px;">
+            <div class="card stat-card">
+                <div class="stat-icon red">$</div>
+                <div class="card-value">@analytics.TotalSpent.ToString("N2")</div>
+                <div class="card-header">Total Spent</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon green">$</div>
+                <div class="card-value">@analytics.TotalReceived.ToString("N2")</div>
+                <div class="card-header">Total Received</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon white">@(analytics.TransactionCount)</div>
+                <div class="card-header">Transactions</div>
+            </div>
+        </div>
+
+        <div class="grid grid-2" style="margin-bottom:24px;">
+            <div class="card stat-card">
+                <div class="card-header">Average Transaction</div>
+                <div class="card-value" style="font-size:20px;">@analytics.AverageTransaction.ToString("N2")</div>
+            </div>
+            <div class="card stat-card">
+                <div class="card-header">Net Flow</div>
+                <div class="card-value" style="font-size:20px; color:@((analytics.TotalReceived - analytics.TotalSpent) >= 0 ? "var(--success-color)" : "var(--danger-color)")">
+                    @((analytics.TotalReceived - analytics.TotalSpent).ToString("N2"))
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:24px;">
+            <div class="card-header">Spending by Category</div>
+            @if (analytics.ByCategory.Any())
+            {
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Count</th>
+                            <th>Amount</th>
+                            <th>%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var cat in analytics.ByCategory)
+                        {
+                            <tr>
+                                <td><span class="badge @GetCategoryBadge(cat.Category)">@cat.Category</span></td>
+                                <td>@cat.Count</td>
+                                <td>@cat.Amount.ToString("N2")</td>
+                                <td>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <div style="flex:1; background:var(--border-color); border-radius:4px; height:8px;">
+                                            <div style="width:@cat.Percentage%; background:var(--primary-color); height:8px; border-radius:4px;"></div>
+                                        </div>
+                                        <span style="font-size:12px; min-width:40px;">@cat.Percentage%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <p style="color:var(--text-secondary); text-align:center; padding:20px;">No data available.</p>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header">Monthly Trend</div>
+            @if (analytics.MonthlyTrend.Any())
+            {
+                <div style="display:flex; align-items:flex-end; gap:8px; height:200px; padding:20px 0;">
+                    @{ var maxAmount = analytics.MonthlyTrend.Max(m => m.Amount); }
+                    @foreach (var month in analytics.MonthlyTrend)
+                    {
+                        var heightPct = maxAmount > 0 ? (month.Amount / maxAmount * 100) : 0;
+                        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                            <span style="font-size:11px; color:var(--text-secondary);">@month.Amount.ToString("N0")</span>
+                            <div style="width:100%; max-width:40px; height:@heightPct.ToString("F0")px; background:var(--primary-color); border-radius:4px 4px 0 0; min-height:4px;"></div>
+                            <span style="font-size:10px; color:var(--text-secondary);">@month.Month</span>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p style="color:var(--text-secondary); text-align:center; padding:20px;">No data available.</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private ANpay.Api.Components.Services.SpendingAnalytics? analytics;
+    private bool loading = true;
+    private List<WalletDto> wallets = new();
+    private bool _shouldRedirect = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Auth.InitializeAsync(); } catch (InvalidOperationException) { }
+        if (!Auth.IsLoggedIn) { _shouldRedirect = true; return; }
+        Api.SetToken(Auth.Token);
+        await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect) Nav.NavigateTo("/login");
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        try
+        {
+            wallets = await Api.GetWalletsAsync() ?? new();
+            if (wallets.Any())
+            {
+                analytics = await Api.GetSpendingAnalyticsAsync(wallets.First().Id);
+            }
+        }
+        catch { analytics = null; }
+        loading = false;
+    }
+
+    private string GetCategoryBadge(string category) => category switch
+    {
+        "Deposit" => "success",
+        "Withdrawal" => "danger",
+        "TransferIn" => "info",
+        "TransferOut" => "warning",
+        "Payment" => "warning",
+        _ => ""
+    };
+}

@@ -1,8 +1,11 @@
 @page "/merchant/dashboard"
+@rendermode InteractiveServer
 @using Microsoft.AspNetCore.Authorization
 @using ANpay.Api.Components.Services
 @using ANpay.Api.Models
 @inject ApiService Api
+@inject AuthState Auth
+@inject NavigationManager Nav
 @attribute [Authorize(Roles = "SuperAdmin,MainBranchAdmin,BranchAdmin")]
 
 <div class="page-container">
@@ -13,6 +16,13 @@
     @if (loading)
     {
         <div class="loading-state">Loading merchant data...</div>
+    }
+    else if (!string.IsNullOrEmpty(error))
+    {
+        <div class="card">
+            <p style="color: var(--color-error);">@error</p>
+            <button class="btn btn-primary" @onclick="LoadData" style="margin-top: 12px;">Retry</button>
+        </div>
     }
     else if (merchant == null)
     {
@@ -122,6 +132,7 @@
 
 @code {
     private bool loading = true;
+    private string error = string.Empty;
     private Merchant? merchant;
     private List<MerchantPayment> payments = new();
     private List<MerchantSettlement> settlements = new();
@@ -133,13 +144,28 @@
     {
         try
         {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
+        Api.SetToken(Auth.Token);
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        error = string.Empty;
+        try
+        {
+            merchant = await Api.GetAsync<Merchant>("api/merchant/me");
             payments = await Api.GetAsync<List<MerchantPayment>>("api/merchant/payments") ?? new();
             settlements = await Api.GetAsync<List<MerchantSettlement>>("api/merchant/settlements") ?? new();
             totalPayments = payments.Count;
             totalRevenue = payments.Where(p => p.Status == MerchantPaymentStatus.Completed).Sum(p => p.NetAmount);
             pendingSettlement = settlements.Where(s => s.Status == SettlementStatus.Pending).Sum(s => s.NetAmount);
         }
-        catch { }
+        catch (Exception ex) { error = $"Failed to load merchant data: {ex.Message}"; }
         finally { loading = false; }
     }
 

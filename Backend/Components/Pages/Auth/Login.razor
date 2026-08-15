@@ -4,6 +4,7 @@
 @inject ApiService Api
 @inject AuthState Auth
 @inject NavigationManager Nav
+@inject WebAuthnService WebAuthn
 
 <div class="auth-container">
     <div class="auth-card">
@@ -43,6 +44,15 @@
         <p style="text-align: center; margin-top: 20px; color: var(--text-secondary);">
             Don't have an account? <a href="/register" class="auth-link">Register</a>
         </p>
+        <p style="text-align: center; margin-top: 8px; color: var(--text-secondary);">
+            <a href="/forgot-password" class="auth-link">Forgot password?</a>
+        </p>
+        <p style="text-align: center; margin-top: 8px;">
+            <button class="auth-link" style="background:none; border:none; color:var(--primary-color); cursor:pointer; font-size:14px;"
+                    @onclick="ShowBiometricLogin">
+                Sign in with biometrics
+            </button>
+        </p>
     </div>
 </div>
 
@@ -53,7 +63,12 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (Auth.IsLoggedIn)
         {
             RedirectByRole();
@@ -79,11 +94,52 @@
                 errorMessage = result.Message;
             }
         }
-        catch
+        catch (HttpRequestException ex)
         {
-            errorMessage = "Connection error. Please try again.";
+            errorMessage = $"Connection error: {ex.Message}. Please try again.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
         }
 
+        isLoading = false;
+    }
+
+    private async Task ShowBiometricLogin()
+    {
+        errorMessage = string.Empty;
+        try
+        {
+            var isAvailable = await WebAuthn.IsWebAuthnAvailableAsync();
+            if (!isAvailable)
+            {
+                errorMessage = "Biometric login is not supported on this device/browser.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(loginModel.Email))
+            {
+                errorMessage = "Please enter your email first, then click 'Sign in with biometrics'.";
+                return;
+            }
+
+            isLoading = true;
+            var result = await WebAuthn.AuthenticateAsync(loginModel.Email);
+            if (result.Success)
+            {
+                await Auth.LoginAsync(result.Token, result.UserId, result.Email, result.Role, result.FirstName, result.LastName);
+                RedirectByRole();
+            }
+            else
+            {
+                errorMessage = result.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Biometric login failed: {ex.Message}";
+        }
         isLoading = false;
     }
 

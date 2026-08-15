@@ -291,16 +291,26 @@
         new StatusStep { Index = 5, Label = "Rejected", Status = "Rejected" }
     };
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
         await Auth.InitializeAsync();
         if (!Auth.IsLoggedIn)
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
         Api.SetToken(Auth.Token);
         await LoadKycStatus();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadKycStatus()

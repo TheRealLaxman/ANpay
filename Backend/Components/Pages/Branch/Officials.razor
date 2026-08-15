@@ -5,9 +5,13 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -95,6 +99,7 @@
 }
 
 @code {
+    private bool isInitialized = false;
     private List<EmployeeDto> employees = new();
     private string message = string.Empty;
     private bool isSuccess = true;
@@ -103,23 +108,51 @@
     private string newEmployeeSubRole = "Teller";
     private Guid branchId = Guid.Empty;
 
+    private bool _shouldRedirect = false;
+
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsBranchAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
+        Api.SetToken(Auth.Token);
+
+        // Get the user's branch ID from their profile
+        try
+        {
+            var profile = await Api.GetProfileAsync();
+            if (profile != null && !string.IsNullOrEmpty(profile.BranchId) && Guid.TryParse(profile.BranchId, out var parsedBranchId))
+            {
+                branchId = parsedBranchId;
+            }
+        }
+        catch { }
+
         await LoadEmployees();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadEmployees()
     {
         try
         {
-            var branchDash = await Api.GetDashboardStatsAsync();
-            employees = await Api.GetEmployeesAsync(Guid.Empty) ?? new();
+            employees = await Api.GetEmployeesAsync(branchId) ?? new();
         }
         catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
     }

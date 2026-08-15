@@ -5,9 +5,13 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 
+@if (!isInitialized)
+{
+    return;
+}
+
 @if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
 {
-    Nav.NavigateTo("/login");
     return;
 }
 
@@ -48,82 +52,70 @@
     </div>
 
     <div class="card">
-        <div class="card-header">Recent Transactions</div>
-        <div class="table-filters">
-            <input class="form-control" placeholder="Search..." @bind="searchTerm" @bind:after="FilterTransactions" />
-            <select class="form-control" @bind="filterType" @bind:after="FilterTransactions" style="max-width: 200px;">
-                <option value="">All Types</option>
-                <option value="Deposit">Deposit</option>
-                <option value="Withdrawal">Withdrawal</option>
-                <option value="TransferIn">Transfer In</option>
-                <option value="TransferOut">Transfer Out</option>
-                <option value="Payment">Payment</option>
-                <option value="Refund">Refund</option>
-            </select>
-            <select class="form-control" @bind="filterStatus" @bind:after="FilterTransactions" style="max-width: 200px;">
-                <option value="">All Status</option>
-                <option value="Completed">Completed</option>
-                <option value="Pending">Pending</option>
-                <option value="Failed">Failed</option>
-                <option value="Cancelled">Cancelled</option>
-            </select>
-            <button class="btn btn-outline" @onclick="LoadData">Refresh</button>
-        </div>
+        <div class="card-header">Branch Transaction Summary</div>
         <table class="table">
             <thead>
                 <tr>
-                    <th>Date</th>
-                    <th>Reference</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Balance Before</th>
-                    <th>Balance After</th>
-                    <th>Status</th>
-                    <th>Description</th>
+                    <th>Branch</th>
+                    <th>Today Deposits</th>
+                    <th>Today Withdrawals</th>
+                    <th>Today Transfers</th>
+                    <th>Cash Balance</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var tx in filteredTransactions)
+                @foreach (var branch in branchSummaries)
                 {
                     <tr>
-                        <td>@tx.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
-                        <td style="font-family: monospace; font-size: 12px;">@tx.ReferenceNumber</td>
-                        <td><span class="badge @GetTypeBadge(tx.Type)">@tx.Type</span></td>
-                        <td>@tx.Amount.ToString("N2")</td>
-                        <td>@tx.BalanceBefore.ToString("N2")</td>
-                        <td>@tx.BalanceAfter.ToString("N2")</td>
-                        <td><span class="badge @GetStatusBadge(tx.Status)">@tx.Status</span></td>
-                        <td>@tx.Description</td>
+                        <td>@branch.Name</td>
+                        <td>$@branch.TodayDeposits.ToString("N2")</td>
+                        <td>$@branch.TodayWithdrawals.ToString("N2")</td>
+                        <td>@branch.TodayTransfers</td>
+                        <td>$@branch.CashBalance.ToString("N2")</td>
                     </tr>
                 }
             </tbody>
         </table>
-        @if (!filteredTransactions.Any())
+        @if (!branchSummaries.Any())
         {
-            <p style="text-align:center; color: var(--text-secondary); padding: 32px;">No transactions found</p>
+            <p style="text-align:center; color: var(--text-secondary); padding: 32px;">No branch data found</p>
         }
     </div>
 </div>
 
 @code {
-    private List<TransactionDto> allTransactions = new();
-    private List<TransactionDto> filteredTransactions = new();
+    private bool isInitialized = false;
+    private List<BranchSummary> branchSummaries = new();
     private DashboardStatsDto stats = new();
     private string message = string.Empty;
     private bool isSuccess = true;
-    private string searchTerm = string.Empty;
-    private string filterType = string.Empty;
-    private string filterStatus = string.Empty;
+
+    private bool _shouldRedirect = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.InitializeAsync();
+        try
+        {
+            await Auth.InitializeAsync();
+        }
+        catch (InvalidOperationException) { }
+
         if (!Auth.IsLoggedIn || !Auth.IsSuperAdmin())
         {
-            Nav.NavigateTo("/login");
+            _shouldRedirect = true;
             return;
         }
+        isInitialized = true;
+        Api.SetToken(Auth.Token);
         await LoadData();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && _shouldRedirect)
+        {
+            Nav.NavigateTo("/login");
+        }
     }
 
     private async Task LoadData()
@@ -132,30 +124,25 @@
         {
             stats = await Api.GetDashboardStatsAsync();
             var branches = await Api.GetBranchesAsync();
+            branchSummaries = new List<BranchSummary>();
             foreach (var branch in branches)
             {
                 try
                 {
                     var branchDash = await Api.GetBranchDashboardAsync(branch.Id);
+                    branchSummaries.Add(new BranchSummary
+                    {
+                        Name = branch.Name,
+                        TodayDeposits = branchDash.TodayDeposits,
+                        TodayWithdrawals = branchDash.TodayWithdrawals,
+                        TodayTransfers = branchDash.TodayTransfers,
+                        CashBalance = branchDash.CashBalance
+                    });
                 }
                 catch { }
             }
         }
         catch (Exception ex) { ShowAlert(ex.Message, "danger"); }
-        FilterTransactions();
-    }
-
-    private void FilterTransactions()
-    {
-        var result = allTransactions.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(searchTerm))
-            result = result.Where(t => t.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                (t.ReferenceNumber != null && t.ReferenceNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)));
-        if (!string.IsNullOrWhiteSpace(filterType))
-            result = result.Where(t => t.Type.Equals(filterType, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(filterStatus))
-            result = result.Where(t => t.Status.Equals(filterStatus, StringComparison.OrdinalIgnoreCase));
-        filteredTransactions = result.OrderByDescending(t => t.CreatedAt).ToList();
     }
 
     private void ShowAlert(string msg, string type)
@@ -164,23 +151,12 @@
         isSuccess = type == "success";
     }
 
-    private string GetTypeBadge(string type) => type switch
+    private class BranchSummary
     {
-        "Deposit" => "badge-success",
-        "Withdrawal" => "badge-danger",
-        "TransferIn" => "badge-success",
-        "TransferOut" => "badge-warning",
-        "Payment" => "badge-info",
-        "Refund" => "badge-success",
-        _ => ""
-    };
-
-    private string GetStatusBadge(string status) => status switch
-    {
-        "Completed" => "badge-success",
-        "Failed" => "badge-danger",
-        "Pending" => "badge-warning",
-        "Cancelled" => "badge-danger",
-        _ => ""
-    };
+        public string Name { get; set; } = string.Empty;
+        public decimal TodayDeposits { get; set; }
+        public decimal TodayWithdrawals { get; set; }
+        public int TodayTransfers { get; set; }
+        public decimal CashBalance { get; set; }
+    }
 }
