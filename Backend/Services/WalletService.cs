@@ -11,12 +11,16 @@ public class WalletService
     private readonly ApplicationDbContext _context;
     private readonly ILogger<WalletService> _logger;
     private readonly LedgerService _ledgerService;
+    private readonly FeeService _feeService;
+    private readonly LimitService _limitService;
 
-    public WalletService(ApplicationDbContext context, ILogger<WalletService> logger, LedgerService ledgerService)
+    public WalletService(ApplicationDbContext context, ILogger<WalletService> logger, LedgerService ledgerService, FeeService feeService, LimitService limitService)
     {
         _context = context;
         _logger = logger;
         _ledgerService = ledgerService;
+        _feeService = feeService;
+        _limitService = limitService;
     }
 
     public async Task<WalletDto> CreateWalletAsync(string userId, CreateWalletDto dto)
@@ -101,8 +105,23 @@ public class WalletService
             if (wallet == null)
                 throw new NotFoundException("Wallet not found");
 
+            if (!wallet.IsActive)
+                throw new ValidationException("Wallet is deactivated");
+
             if (dto.Amount <= 0)
                 throw new ValidationException("Amount must be greater than zero");
+
+            // Enforce single transaction limit
+            if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.SingleTransaction, dto.Amount, wallet.Currency))
+                throw new ValidationException("Amount exceeds single transaction limit");
+
+            // Enforce daily deposit limit
+            if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.DailyDeposit, dto.Amount, wallet.Currency))
+                throw new ValidationException("Amount exceeds daily deposit limit");
+
+            // Enforce monthly deposit limit
+            if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.MonthlyDeposit, dto.Amount, wallet.Currency))
+                throw new ValidationException("Amount exceeds monthly deposit limit");
 
             var balanceBefore = wallet.Balance;
             wallet.Balance += dto.Amount;
@@ -120,17 +139,10 @@ public class WalletService
             };
 
             _context.Transactions.Add(txRecord);
+
+            await _ledgerService.PostWalletDepositAsync(txRecord.Id, wallet.Id, dto.Amount, wallet.Currency);
+
             await _context.SaveChangesAsync();
-
-            try
-            {
-                await _ledgerService.PostWalletDepositAsync(txRecord.Id, wallet.Id, dto.Amount, wallet.Currency);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to post ledger entry for deposit {TxId}", txRecord.Id);
-            }
-
             await transaction.CommitAsync();
 
             _logger.LogInformation("Deposit completed. Ref: {Ref}", txRecord.ReferenceNumber);
@@ -158,11 +170,27 @@ public class WalletService
             if (wallet == null)
                 throw new NotFoundException("Wallet not found");
 
+            if (!wallet.IsActive)
+                throw new ValidationException("Wallet is deactivated");
+
             if (dto.Amount <= 0)
                 throw new ValidationException("Amount must be greater than zero");
 
-            if (wallet.Balance < dto.Amount)
-                throw new ValidationException("Insufficient balance");
+            // Use AvailableBalance (excludes frozen funds) instead of Balance
+            if (wallet.AvailableBalance < dto.Amount)
+                throw new ValidationException("Insufficient available balance");
+
+            // Enforce single transaction limit
+            if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.SingleTransaction, dto.Amount, wallet.Currency))
+                throw new ValidationException("Amount exceeds single transaction limit");
+
+            // Enforce daily withdrawal limit
+            if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.DailyWithdrawal, dto.Amount, wallet.Currency))
+                throw new ValidationException("Amount exceeds daily withdrawal limit");
+
+            // Enforce monthly withdrawal limit
+            if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.MonthlyWithdrawal, dto.Amount, wallet.Currency))
+                throw new ValidationException("Amount exceeds monthly withdrawal limit");
 
             var balanceBefore = wallet.Balance;
             wallet.Balance -= dto.Amount;
@@ -180,17 +208,10 @@ public class WalletService
             };
 
             _context.Transactions.Add(txRecord);
+
+            await _ledgerService.PostWalletWithdrawalAsync(txRecord.Id, wallet.Id, dto.Amount, wallet.Currency);
+
             await _context.SaveChangesAsync();
-
-            try
-            {
-                await _ledgerService.PostWalletWithdrawalAsync(txRecord.Id, wallet.Id, dto.Amount, wallet.Currency);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to post ledger entry for withdrawal {TxId}", txRecord.Id);
-            }
-
             await transaction.CommitAsync();
 
             _logger.LogInformation("Withdrawal completed. Ref: {Ref}", txRecord.ReferenceNumber);
@@ -212,29 +233,44 @@ public class WalletService
         if (dto.SourceWalletId == dto.DestinationWalletId)
             throw new ValidationException("Cannot transfer to the same wallet");
 
-        if (dto.Amount <= 0)
-            throw new ValidationException("Amount must be greater than zero");
+            if (dto.Amount <= 0)
+                throw new ValidationException("Amount must be greater than zero");
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-        try
-        {
-            var sourceWallet = await _context.Wallets
-                .FirstOrDefaultAsync(w => w.Id == dto.SourceWalletId && w.UserId == userId);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var sourceWallet = await _context.Wallets
+                    .FirstOrDefaultAsync(w => w.Id == dto.SourceWalletId && w.UserId == userId);
 
-            if (sourceWallet == null)
-                throw new NotFoundException("Source wallet not found");
+                if (sourceWallet == null)
+                    throw new NotFoundException("Source wallet not found");
 
-            var destWallet = await _context.Wallets
-                .FirstOrDefaultAsync(w => w.Id == dto.DestinationWalletId);
+                if (!sourceWallet.IsActive)
+                    throw new ValidationException("Source wallet is deactivated");
 
-            if (destWallet == null)
-                throw new NotFoundException("Destination wallet not found");
+                var destWallet = await _context.Wallets
+                    .FirstOrDefaultAsync(w => w.Id == dto.DestinationWalletId);
 
-            if (sourceWallet.AvailableBalance < dto.Amount)
-                throw new ValidationException("Insufficient balance");
+                if (destWallet == null)
+                    throw new NotFoundException("Destination wallet not found");
 
-            if (sourceWallet.Currency != destWallet.Currency)
-                throw new ValidationException("Currency mismatch");
+                if (sourceWallet.AvailableBalance < dto.Amount)
+                    throw new ValidationException("Insufficient available balance");
+
+                if (sourceWallet.Currency != destWallet.Currency)
+                    throw new ValidationException("Currency mismatch");
+
+                // Enforce single transaction limit
+                if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.SingleTransaction, dto.Amount, sourceWallet.Currency))
+                    throw new ValidationException("Amount exceeds single transaction limit");
+
+                // Enforce daily transfer limit
+                if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.DailyTransfer, dto.Amount, sourceWallet.Currency))
+                    throw new ValidationException("Amount exceeds daily transfer limit");
+
+                // Enforce monthly transfer limit
+                if (!await _limitService.CheckLimitAsync(userId, TransactionLimitType.MonthlyTransfer, dto.Amount, sourceWallet.Currency))
+                    throw new ValidationException("Amount exceeds monthly transfer limit");
 
             var sourceBalanceBefore = sourceWallet.Balance;
             var destBalanceBefore = destWallet.Balance;
@@ -271,17 +307,10 @@ public class WalletService
 
             _context.Transactions.Add(outTransaction);
             _context.Transactions.Add(inTransaction);
+
+            await _ledgerService.PostTransferAsync(outTransaction.Id, sourceWallet.Id, destWallet.Id, dto.Amount, sourceWallet.Currency);
+
             await _context.SaveChangesAsync();
-
-            try
-            {
-                await _ledgerService.PostTransferAsync(outTransaction.Id, sourceWallet.Id, destWallet.Id, dto.Amount, sourceWallet.Currency);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to post ledger entry for transfer {Ref}", referenceNumber);
-            }
-
             await transaction.CommitAsync();
 
             _logger.LogInformation("Transfer completed. Ref: {Ref}", referenceNumber);

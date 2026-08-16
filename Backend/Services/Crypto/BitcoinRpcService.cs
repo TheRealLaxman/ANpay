@@ -174,7 +174,7 @@ public class BitcoinRpcService : IBlockchainService
         try
         {
             using var client = CreateRpcClient();
-            var response = await SendRpcRequestAsync(client, "sendtoaddress", new object[] { toAddress, amount, "", "", false, true, null, null, null, fee });
+            var response = await SendRpcRequestAsync(client, "sendtoaddress", new object[] { toAddress, amount, "", "", false, true, (string?)null, (string?)null, (string?)null, fee });
             var txHash = response?.GetProperty("result").GetString() ?? throw new Exception("Failed to send transaction");
             _logger.LogInformation("Bitcoin transaction sent: {TxHash}", txHash);
             return txHash;
@@ -227,7 +227,7 @@ public class BitcoinRpcService : IBlockchainService
         {
             using var client = CreateRpcClient();
             var response = await SendRpcRequestAsync(client, "validateaddress", new object[] { address });
-            return response?.GetProperty("result").GetProperty("isvalid").GetBool() ?? false;
+            return response?.GetProperty("result").GetProperty("isvalid").GetBoolean() ?? false;
         }
         catch
         {
@@ -269,15 +269,56 @@ public class BitcoinRpcService : IBlockchainService
         var privateKeyBytes = new byte[32];
         rng.GetBytes(privateKeyBytes);
 
-        // Simple hash-based address generation (not production-grade, use NBitcoin for real wallets)
-        var addressBytes = SHA256.HashData(privateKeyBytes);
-        var address = "1" + Convert.ToBase64String(addressBytes).Replace("+", "").Replace("/", "").Substring(0, 33);
+        // SHA256 hash for address bytes
+        var addressHash = SHA256.HashData(privateKeyBytes);
+        // Prepend version byte 0x00 for mainnet P2PKH
+        var versionedHash = new byte[addressHash.Length + 1];
+        versionedHash[0] = 0x00;
+        Array.Copy(addressHash, 0, versionedHash, 1, addressHash.Length);
+        // Double SHA256 for checksum
+        var checksum = SHA256.HashData(SHA256.HashData(versionedHash));
+        // Take first 4 bytes of checksum
+        var fullAddress = new byte[versionedHash.Length + 4];
+        Array.Copy(versionedHash, fullAddress, versionedHash.Length);
+        Array.Copy(checksum, 0, fullAddress, versionedHash.Length, 4);
+        // Base58 encode
+        var address = Base58Encode(fullAddress);
 
         return new BlockchainWalletInfo
         {
             Address = address,
             PrivateKey = Convert.ToBase64String(privateKeyBytes),
-            Network = "Bitcoin (Local Generated)"
+            Network = "Bitcoin (Local Generated - not production-ready, use RPC)"
         };
+    }
+
+    private static string Base58Encode(byte[] data)
+    {
+        const string alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+        var sb = new StringBuilder();
+        foreach (var b in data)
+        {
+            int carry = b;
+            for (int j = 0; j < sb.Length; j++)
+            {
+                int x = (alphabet.IndexOf(sb[j]) << 8) + carry;
+                sb[j] = alphabet[x % 58];
+                carry = x / 58;
+            }
+            while (carry > 0)
+            {
+                sb.Append(alphabet[carry % 58]);
+                carry /= 58;
+            }
+        }
+        // Add leading 1s for leading zero bytes
+        foreach (var b in data)
+        {
+            if (b == 0) sb.Append('1');
+            else break;
+        }
+        var chars = sb.ToString().ToCharArray();
+        Array.Reverse(chars);
+        return new string(chars);
     }
 }

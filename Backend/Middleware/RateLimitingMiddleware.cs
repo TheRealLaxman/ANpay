@@ -10,7 +10,7 @@ public class RateLimitingMiddleware
     private readonly int _maxRequestsPerMinute;
     private readonly int _cleanupIntervalSeconds;
     private static readonly ConcurrentDictionary<string, RequestTracker> _ipTrackers = new();
-    private static readonly Timer _cleanupTimer = new(CleanupOldEntries, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    private static Timer? _cleanupTimer;
     private static readonly HashSet<string> _skippedPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "/health",
@@ -25,6 +25,12 @@ public class RateLimitingMiddleware
         _logger = logger;
         _maxRequestsPerMinute = configuration.GetValue("RateLimiting:MaxRequestsPerMinute", 60);
         _cleanupIntervalSeconds = configuration.GetValue("RateLimiting:CleanupIntervalSeconds", 30);
+
+        if (_cleanupTimer == null)
+        {
+            var interval = TimeSpan.FromSeconds(_cleanupIntervalSeconds);
+            _cleanupTimer = new Timer(CleanupOldEntries, null, interval, interval);
+        }
     }
 
     public async Task InvokeAsync(HttpContext context)

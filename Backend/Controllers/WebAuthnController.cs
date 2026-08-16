@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ANpay.Api.Data;
@@ -116,34 +117,90 @@ public class WebAuthnController : ControllerBase
         return Ok(new { message = "Credential registered", credentialId = credential.Id });
     }
 
-    [Authorize]
+    [AllowAnonymous]
     [HttpPost("verify")]
     public async Task<IActionResult> Verify([FromBody] VerifyCredentialRequest request)
     {
-        var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (string.IsNullOrEmpty(request.CredentialId))
+            return BadRequest(new { success = false, error = "CredentialId is required" });
+
+        // ChallengeId is required for login — prevents replay attacks
+        if (string.IsNullOrEmpty(request.ChallengeId))
+            return BadRequest(new { success = false, error = "ChallengeId is required for login" });
 
         var credential = await _context.WebAuthnCredentials
-            .FirstOrDefaultAsync(c => c.CredentialId == request.CredentialId && c.UserId == userId && c.IsActive);
+            .FirstOrDefaultAsync(c => c.CredentialId == request.CredentialId && c.IsActive);
         if (credential == null)
             return Ok(new { success = false, error = "Credential not found" });
 
         if (string.IsNullOrEmpty(request.Signature) || string.IsNullOrEmpty(request.AuthenticatorData) || string.IsNullOrEmpty(request.ClientDataJSON))
             return BadRequest(new { success = false, error = "Missing authenticator response fields" });
 
-        // Validate challenge if provided
-        if (!string.IsNullOrEmpty(request.ChallengeId))
+        // Validate challenge — must be provided and valid
+        var challenge = await _context.WebAuthnChallenges
+            .FirstOrDefaultAsync(c => c.Id.ToString() == request.ChallengeId && !c.IsUsed && c.ExpiresAt > DateTime.UtcNow);
+        if (challenge == null)
+            return BadRequest(new { success = false, error = "Invalid or expired challenge" });
+
+        // Verify the challenge matches the expected value from clientDataJSON
+        if (!string.IsNullOrEmpty(challenge.Challenge))
         {
-            var challenge = await _context.WebAuthnChallenges
-                .FirstOrDefaultAsync(c => c.Id.ToString() == request.ChallengeId && !c.IsUsed && c.ExpiresAt > DateTime.UtcNow);
-            if (challenge != null)
+            try
             {
-                challenge.IsUsed = true;
+                var clientData = JsonSerializer.Deserialize<JsonElement>(request.ClientDataJSON);
+                var challengeFromClient = clientData.TryGetProperty("challenge", out var ch) ? ch.GetString() : null;
+                if (challengeFromClient != challenge.Challenge)
+                    return BadRequest(new { success = false, error = "Challenge mismatch" });
+            }
+            catch
+            {
+                return BadRequest(new { success = false, error = "Invalid clientDataJSON" });
             }
         }
 
-        credential.Counter++;
+        challenge.IsUsed = true;
+
+        // Verify the signature using the stored public key
+        // Per FIDO2 spec: signed data = authenticatorData || SHA256(clientDataJSON)
+        try
+        {
+            var authenticatorDataBytes = Convert.FromBase64String(request.AuthenticatorData);
+            var clientDataJsonBytes = Encoding.UTF8.GetBytes(request.ClientDataJSON);
+
+            using var sha256 = SHA256.Create();
+            var clientDataHash = sha256.ComputeHash(clientDataJsonBytes);
+
+            // Concatenate authenticatorData + SHA256(clientDataJSON)
+            var dataToVerify = new byte[authenticatorDataBytes.Length + 32];
+            Array.Copy(authenticatorDataBytes, 0, dataToVerify, 0, authenticatorDataBytes.Length);
+            Array.Copy(clientDataHash, 0, dataToVerify, authenticatorDataBytes.Length, 32);
+
+            var signatureBytes = Convert.FromBase64String(request.Signature);
+            var publicKeyBytes = Convert.FromBase64String(credential.PublicKey);
+
+            using var ecdsa = ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(publicKeyBytes, out _);
+
+            // Hash the concatenated data
+            var hash = sha256.ComputeHash(dataToVerify);
+
+            var isValid = ecdsa.VerifyHash(hash, signatureBytes);
+            if (!isValid)
+                return Ok(new { success = false, error = "Signature verification failed" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "WebAuthn signature verification error for credential {CredentialId}", request.CredentialId);
+            return Ok(new { success = false, error = "Signature verification error" });
+        }
+
         credential.LastUsedAt = DateTime.UtcNow;
+
+        // Validate FIDO2 counter — must be > stored counter to detect cloned authenticators
+        if (request.Counter <= credential.Counter)
+            return Ok(new { success = false, error = "Authenticator counter validation failed" });
+
+        credential.Counter = request.Counter;
         await _context.SaveChangesAsync();
 
         var user = await _userManager.FindByIdAsync(credential.UserId);
@@ -231,7 +288,8 @@ public class WebAuthnController : ControllerBase
             new Claim(ClaimTypes.Email, user.Email ?? ""),
             new Claim(ClaimTypes.Role, user.Role.ToString()),
             new Claim("FirstName", user.FirstName),
-            new Claim("LastName", user.LastName)
+            new Claim("LastName", user.LastName),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
         var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
@@ -265,4 +323,5 @@ public class VerifyCredentialRequest
     public string ClientDataJSON { get; set; } = string.Empty;
     public string Signature { get; set; } = string.Empty;
     public string? ChallengeId { get; set; }
+    public int Counter { get; set; }
 }

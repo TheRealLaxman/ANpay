@@ -48,9 +48,9 @@ public class CryptoDepositMonitorWorker : BackgroundService
     private async Task CheckPendingDepositsAsync(ApplicationDbContext context, CancellationToken ct)
     {
         var pendingDeposits = await context.CryptoTransactions
-            .Include(ct => ct.CryptoWallet)
-            .Where(ct => ct.Type == CryptoTransactionType.Deposit
-                        && (ct.Status == CryptoTransactionStatus.Pending || ct.Status == CryptoTransactionStatus.Confirming))
+            .Include(c => c.CryptoWallet)
+            .Where(c => c.Type == CryptoTransactionType.Deposit
+                        && (c.Status == CryptoTransactionStatus.Pending || c.Status == CryptoTransactionStatus.Confirming))
             .ToListAsync(ct);
 
         foreach (var tx in pendingDeposits)
@@ -71,8 +71,37 @@ public class CryptoDepositMonitorWorker : BackgroundService
                         tx.Status = CryptoTransactionStatus.Completed;
                         tx.CompletedAt = DateTime.UtcNow;
 
-                        _logger.LogInformation("Crypto deposit confirmed: {Amount} {Asset}. TxHash: {TxHash}. Confirmations: {Confirmations}",
-                            tx.Amount, tx.Asset, tx.TxHash, tx.Confirmations);
+                        await using var walletTransaction = await context.Database.BeginTransactionAsync(ct);
+
+                        // Credit the user's fiat wallet
+                        var wallet = await context.Wallets
+                            .FirstOrDefaultAsync(w => w.UserId == tx.CryptoWallet.UserId && w.IsActive);
+                        if (wallet != null)
+                        {
+                            var balanceBefore = wallet.Balance;
+                            wallet.Balance += tx.Amount;
+
+                            context.Transactions.Add(new Transaction
+                            {
+                                WalletId = wallet.Id,
+                                Type = TransactionType.Deposit,
+                                Amount = tx.Amount,
+                                BalanceBefore = balanceBefore,
+                                BalanceAfter = wallet.Balance,
+                                Description = $"Crypto deposit credited - {tx.Asset} ({tx.Network})",
+                                ReferenceNumber = $"CRYPTO-DEP-{tx.Id.ToString()[..8].ToUpper()}",
+                                Status = TransactionStatus.Completed
+                            });
+
+                            _logger.LogInformation("Crypto deposit credited: {Amount} {Asset} to wallet {WalletId}. TxHash: {TxHash}",
+                                tx.Amount, tx.Asset, wallet.Id, tx.TxHash);
+                        }
+                        else
+                        {
+                            _logger.LogError("Wallet not found for crypto deposit {TxId}", tx.Id);
+                        }
+
+                        await walletTransaction.CommitAsync(ct);
                     }
                     else if (onChainTx.Confirmations > 0)
                     {
@@ -97,9 +126,9 @@ public class CryptoDepositMonitorWorker : BackgroundService
     private async Task ProcessPendingWithdrawalsAsync(ApplicationDbContext context, CancellationToken ct)
     {
         var pendingWithdrawals = await context.CryptoTransactions
-            .Include(ct => ct.CryptoWallet)
-            .Where(ct => ct.Type == CryptoTransactionType.Withdrawal
-                        && ct.Status == CryptoTransactionStatus.Pending)
+            .Include(c => c.CryptoWallet)
+            .Where(c => c.Type == CryptoTransactionType.Withdrawal
+                        && c.Status == CryptoTransactionStatus.Pending)
             .ToListAsync(ct);
 
         foreach (var tx in pendingWithdrawals)
@@ -135,11 +164,10 @@ public class CryptoDepositMonitorWorker : BackgroundService
 
     private IBlockchainService GetBlockchainService(CryptoNetwork network)
     {
-        using var scope = _serviceProvider.CreateScope();
         return network switch
         {
-            CryptoNetwork.Bitcoin => scope.ServiceProvider.GetRequiredService<BitcoinRpcService>(),
-            CryptoNetwork.Ethereum or CryptoNetwork.BnbSmartChain => scope.ServiceProvider.GetRequiredService<EthereumRpcService>(),
+            CryptoNetwork.Bitcoin => _serviceProvider.GetRequiredService<BitcoinRpcService>(),
+            CryptoNetwork.Ethereum or CryptoNetwork.BnbSmartChain => _serviceProvider.GetRequiredService<EthereumRpcService>(),
             _ => throw new NotSupportedException($"Blockchain not supported: {network}")
         };
     }

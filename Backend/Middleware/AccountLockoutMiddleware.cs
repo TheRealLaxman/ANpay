@@ -11,6 +11,8 @@ public class AccountLockoutMiddleware
     private readonly int _maxFailedAttempts;
     private readonly TimeSpan _lockoutDuration;
     private static readonly ConcurrentDictionary<string, FailedLoginTracker> _failedAttempts = new();
+    private static int _staticMaxFailedAttempts = 5;
+    private static TimeSpan _staticLockoutDuration = TimeSpan.FromMinutes(15);
 
     public AccountLockoutMiddleware(RequestDelegate next, ILogger<AccountLockoutMiddleware> logger, IConfiguration configuration)
     {
@@ -18,16 +20,20 @@ public class AccountLockoutMiddleware
         _logger = logger;
         _maxFailedAttempts = configuration.GetValue("AccountLockout:MaxFailedAttempts", 5);
         _lockoutDuration = TimeSpan.FromMinutes(configuration.GetValue("AccountLockout:LockoutDurationMinutes", 15));
+        _staticMaxFailedAttempts = _maxFailedAttempts;
+        _staticLockoutDuration = _lockoutDuration;
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
+        string? loginEmail = null;
+
         if (IsLoginEndpoint(context))
         {
-            var email = await ExtractEmailFromRequest(context);
-            if (!string.IsNullOrEmpty(email))
+            loginEmail = await ExtractEmailFromRequest(context);
+            if (!string.IsNullOrEmpty(loginEmail))
             {
-                var normalizedEmail = email.ToLowerInvariant().Trim();
+                var normalizedEmail = loginEmail.ToLowerInvariant().Trim();
 
                 if (IsAccountLocked(normalizedEmail))
                 {
@@ -36,16 +42,16 @@ public class AccountLockoutMiddleware
                     remainingTime = remainingTime > TimeSpan.Zero ? remainingTime : TimeSpan.Zero;
 
                     _logger.LogWarning("Locked out account attempted login: {Email}. Remaining: {Remaining}",
-                        email, remainingTime);
+                        loginEmail, remainingTime);
 
-                    context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                    context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
                     context.Response.ContentType = "application/json";
 
                     var response = new
                     {
                         success = false,
                         message = $"Account locked due to too many failed attempts. Try again in {remainingTime.Minutes + 1} minutes.",
-                        statusCode = 403,
+                        statusCode = 429,
                         lockoutEnd = tracker.LockoutEnd,
                         retryAfterSeconds = (int)remainingTime.TotalSeconds
                     };
@@ -73,10 +79,12 @@ public class AccountLockoutMiddleware
         newBodyStream.Seek(0, SeekOrigin.Begin);
         await newBodyStream.CopyToAsync(originalBodyStream);
 
-        // Record failed attempt on 401/403 login responses
+        context.Response.Body = originalBodyStream;
+
+        // Use the email captured at the start of the request
         if (IsLoginEndpoint(context) && (context.Response.StatusCode == 401 || context.Response.StatusCode == 403))
         {
-            if (await ExtractEmailFromRequest(context) is { } loginEmail)
+            if (!string.IsNullOrEmpty(loginEmail))
             {
                 var normalizedEmail = loginEmail.ToLowerInvariant().Trim();
                 RecordFailedAttempt(normalizedEmail);
@@ -86,7 +94,7 @@ public class AccountLockoutMiddleware
         // Reset on successful login
         if (IsLoginEndpoint(context) && context.Response.StatusCode == 200)
         {
-            if (await ExtractEmailFromRequest(context) is { } loginEmail)
+            if (!string.IsNullOrEmpty(loginEmail))
             {
                 var normalizedEmail = loginEmail.ToLowerInvariant().Trim();
                 ResetFailedAttempts(normalizedEmail);
@@ -160,9 +168,9 @@ public class AccountLockoutMiddleware
 
             tracker.Attempts++;
 
-            if (tracker.Attempts >= 5) // default max
+            if (tracker.Attempts >= _staticMaxFailedAttempts)
             {
-                tracker.LockoutEnd = DateTime.UtcNow.AddMinutes(15); // default lockout
+                tracker.LockoutEnd = DateTime.UtcNow.Add(_staticLockoutDuration);
             }
         }
     }

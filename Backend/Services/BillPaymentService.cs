@@ -89,8 +89,8 @@ public class BillPaymentService
         var fee = provider.FixedFee + (amount * provider.PercentageFee / 100);
         var totalDebit = amount + fee;
 
-        if (wallet.Balance < totalDebit)
-            throw new ValidationException("Insufficient balance");
+        if (wallet.AvailableBalance < totalDebit)
+            throw new ValidationException("Insufficient available balance");
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -120,7 +120,7 @@ public class BillPaymentService
             {
                 WalletId = walletId,
                 Type = TransactionType.Payment,
-                Amount = amount,
+                Amount = totalDebit,
                 BalanceBefore = balanceBefore,
                 BalanceAfter = wallet.Balance,
                 Description = description ?? $"Bill payment to {provider.Name} ({billerCode})",
@@ -130,16 +130,10 @@ public class BillPaymentService
             };
 
             _context.Transactions.Add(txRecord);
-            await _context.SaveChangesAsync();
 
-            try
-            {
-                await _ledgerService.PostWalletWithdrawalAsync(txRecord.Id, walletId, totalDebit, wallet.Currency);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to post ledger entry for bill payment");
-            }
+            await _ledgerService.PostWalletWithdrawalAsync(txRecord.Id, walletId, totalDebit, wallet.Currency);
+
+            await _context.SaveChangesAsync();
 
             // Call external bill payment provider
             var paymentRequest = new BillPaymentRequest
@@ -246,15 +240,41 @@ public class BillPaymentService
                 billPayment.Status = BillPaymentStatus.Failed;
                 billPayment.ResponseMessage = statusResult.Message;
 
-                // Refund wallet
-                var wallet = await _context.Wallets.FindAsync(billPayment.WalletId);
-                if (wallet != null)
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    wallet.Balance += billPayment.Amount + billPayment.Fee;
+                    var wallet = await _context.Wallets.FindAsync(billPayment.WalletId);
+                    if (wallet != null)
+                    {
+                        var balanceBefore = wallet.Balance;
+                        wallet.Balance += billPayment.Amount + billPayment.Fee;
+
+                        _context.Transactions.Add(new Transaction
+                        {
+                            WalletId = billPayment.WalletId,
+                            Type = TransactionType.Refund,
+                            Amount = billPayment.Amount + billPayment.Fee,
+                            BalanceBefore = balanceBefore,
+                            BalanceAfter = wallet.Balance,
+                            Description = $"Bill payment refund - {billPayment.Provider}",
+                            ReferenceNumber = $"BIL-REF-{billPayment.Id.ToString()[..8].ToUpper()}",
+                            Status = TransactionStatus.Completed
+                        });
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
                 }
             }
-
-            await _context.SaveChangesAsync();
+            else
+            {
+                await _context.SaveChangesAsync();
+            }
         }
 
         return billPayment;

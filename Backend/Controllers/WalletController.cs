@@ -16,14 +16,16 @@ public class WalletController : ControllerBase
     private readonly WalletService _walletService;
     private readonly FeeService _feeService;
     private readonly LimitService _limitService;
+    private readonly AuthService _authService;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ILogger<WalletController> _logger;
 
-    public WalletController(WalletService walletService, FeeService feeService, LimitService limitService, UserManager<ApplicationUser> userManager, ILogger<WalletController> logger)
+    public WalletController(WalletService walletService, FeeService feeService, LimitService limitService, AuthService authService, UserManager<ApplicationUser> userManager, ILogger<WalletController> logger)
     {
         _walletService = walletService;
         _feeService = feeService;
         _limitService = limitService;
+        _authService = authService;
         _userManager = userManager;
         _logger = logger;
     }
@@ -63,6 +65,14 @@ public class WalletController : ControllerBase
     {
         var userId = GetUserId();
         if (userId == null) return Unauthorized();
+
+        // Verify transaction PIN (required)
+        if (string.IsNullOrEmpty(dto.TransactionPin))
+            return BadRequest(new { message = "Transaction PIN is required" });
+
+        var pinValid = await _authService.VerifyTransactionPinAsync(userId, dto.TransactionPin);
+        if (!pinValid) return Unauthorized(new { message = "Invalid transaction PIN" });
+
         var transaction = await _walletService.DepositAsync(userId, dto);
         return Ok(transaction);
     }
@@ -73,6 +83,14 @@ public class WalletController : ControllerBase
     {
         var userId = GetUserId();
         if (userId == null) return Unauthorized();
+
+        // Verify transaction PIN (required)
+        if (string.IsNullOrEmpty(dto.TransactionPin))
+            return BadRequest(new { message = "Transaction PIN is required" });
+
+        var pinValid = await _authService.VerifyTransactionPinAsync(userId, dto.TransactionPin);
+        if (!pinValid) return Unauthorized(new { message = "Invalid transaction PIN" });
+
         var transaction = await _walletService.WithdrawAsync(userId, dto);
         return Ok(transaction);
     }
@@ -83,6 +101,14 @@ public class WalletController : ControllerBase
     {
         var userId = GetUserId();
         if (userId == null) return Unauthorized();
+
+        // Verify transaction PIN (required)
+        if (string.IsNullOrEmpty(dto.TransactionPin))
+            return BadRequest(new { message = "Transaction PIN is required" });
+
+        var pinValid = await _authService.VerifyTransactionPinAsync(userId, dto.TransactionPin);
+        if (!pinValid) return Unauthorized(new { message = "Invalid transaction PIN" });
+
         var transaction = await _walletService.TransferAsync(userId, dto);
         return Ok(transaction);
     }

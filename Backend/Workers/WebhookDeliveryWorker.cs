@@ -70,6 +70,14 @@ public class WebhookDeliveryWorker : BackgroundService
         delivery.AttemptNumber++;
         delivery.LastAttemptAt = DateTime.UtcNow;
 
+        // Add exponential backoff delay between retries
+        if (delivery.AttemptNumber > 1)
+        {
+            var backoffDelay = TimeSpan.FromSeconds(Math.Pow(2, delivery.AttemptNumber - 1) * 5);
+            if (backoffDelay > TimeSpan.FromMinutes(5)) backoffDelay = TimeSpan.FromMinutes(5);
+            await Task.Delay(backoffDelay, ct);
+        }
+
         try
         {
             using var client = _httpClientFactory.CreateClient();
@@ -117,13 +125,13 @@ public class WebhookDeliveryWorker : BackgroundService
                 if (delivery.Status == WebhookDeliveryStatus.Failed)
                 {
                     delivery.Webhook.FailureCount++;
-                    delivery.Webhook.Status = WebhookStatus.Failed;
+                    delivery.Webhook.Status = WebhookStatus.Paused;
                 }
             }
         }
         catch (Exception ex)
         {
-            delivery.ResponseBody = ex.Message;
+            delivery.ResponseBody = ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message;
             delivery.IsSuccess = false;
             delivery.StatusCode = 0;
 
@@ -134,7 +142,7 @@ public class WebhookDeliveryWorker : BackgroundService
             if (delivery.Status == WebhookDeliveryStatus.Failed)
             {
                 delivery.Webhook.FailureCount++;
-                delivery.Webhook.Status = WebhookStatus.Failed;
+                delivery.Webhook.Status = WebhookStatus.Paused;
             }
 
             _logger.LogWarning(ex, "Webhook delivery attempt {Attempt} failed for {Url}", delivery.AttemptNumber, delivery.Webhook?.Url);

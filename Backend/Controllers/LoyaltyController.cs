@@ -31,6 +31,7 @@ public class LoyaltyController : ControllerBase
     }
 
     [HttpPost("earn")]
+    [Authorize(Roles = "SuperAdmin,MainBranchAdmin,BranchAdmin")]
     public async Task<ActionResult<LoyaltyPoint>> EarnPoints([FromBody] EarnPointsRequest request)
     {
         var userId = GetUserId();

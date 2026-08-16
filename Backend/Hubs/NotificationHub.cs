@@ -9,10 +9,14 @@ public class NotificationHub : Hub
     public override async Task OnConnectedAsync()
     {
         var userId = Context.UserIdentifier;
-        if (!string.IsNullOrEmpty(userId))
+        if (string.IsNullOrEmpty(userId))
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
+            Context.Items["MissingUserIdentifier"] = true;
+            await base.OnConnectedAsync();
+            return;
         }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
         await base.OnConnectedAsync();
     }
 
@@ -28,6 +32,14 @@ public class NotificationHub : Hub
 
     public async Task SendNotificationToUser(string userId, string title, string message, string type)
     {
+        var callerId = Context.UserIdentifier;
+        if (string.IsNullOrEmpty(callerId))
+            return;
+
+        var callerRole = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (callerId != userId && callerRole != "SuperAdmin" && callerRole != "MainBranchAdmin" && callerRole != "BranchAdmin")
+            return;
+
         await Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", new
         {
             title,
@@ -39,6 +51,14 @@ public class NotificationHub : Hub
 
     public async Task SendBalanceUpdate(string userId, decimal newBalance)
     {
+        var callerId = Context.UserIdentifier;
+        if (string.IsNullOrEmpty(callerId))
+            return;
+
+        var callerRole = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (callerId != userId && callerRole != "SuperAdmin" && callerRole != "MainBranchAdmin")
+            return;
+
         await Clients.Group($"user_{userId}").SendAsync("BalanceUpdated", new
         {
             balance = newBalance,
@@ -48,6 +68,14 @@ public class NotificationHub : Hub
 
     public async Task SendTransactionUpdate(string userId, string transactionId, string status)
     {
+        var callerId = Context.UserIdentifier;
+        if (string.IsNullOrEmpty(callerId))
+            return;
+
+        var callerRole = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (callerId != userId && callerRole != "SuperAdmin" && callerRole != "MainBranchAdmin")
+            return;
+
         await Clients.Group($"user_{userId}").SendAsync("TransactionUpdated", new
         {
             transactionId,

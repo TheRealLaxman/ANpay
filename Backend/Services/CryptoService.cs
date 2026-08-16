@@ -10,7 +10,6 @@ public class CryptoService
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<CryptoService> _logger;
-    private readonly Dictionary<CryptoNetwork, IBlockchainService> _blockchainServices;
     private readonly IServiceProvider _serviceProvider;
 
     public CryptoService(
@@ -21,23 +20,16 @@ public class CryptoService
         _context = context;
         _logger = logger;
         _serviceProvider = serviceProvider;
-        _blockchainServices = new Dictionary<CryptoNetwork, IBlockchainService>();
     }
 
     private IBlockchainService GetBlockchainService(CryptoNetwork network)
     {
-        if (_blockchainServices.TryGetValue(network, out var service))
-            return service;
-
-        service = network switch
+        return network switch
         {
             CryptoNetwork.Bitcoin => _serviceProvider.GetRequiredService<BitcoinRpcService>(),
             CryptoNetwork.Ethereum or CryptoNetwork.BnbSmartChain => _serviceProvider.GetRequiredService<EthereumRpcService>(),
             _ => throw new ValidationException($"Blockchain not supported for {network}")
         };
-
-        _blockchainServices[network] = service;
-        return service;
     }
 
     public async Task<List<CryptoWallet>> GetUserWalletsAsync(string userId)
@@ -62,7 +54,7 @@ public class CryptoService
             Asset = asset,
             Network = network,
             Address = walletInfo.Address,
-            DerivationPath = walletInfo.Mnemonic
+            DerivationPath = "m/44'/0'/0'/0/0"
         };
 
         _context.CryptoWallets.Add(wallet);
@@ -160,17 +152,13 @@ public class CryptoService
 
         // Check balance
         var balance = await blockchainService.GetBalanceAsync(wallet.Address);
-        var networkConfig = await GetNetworkConfigAsync(wallet.Network);
-        var fee = networkConfig?.AverageTxFee ?? 0.001m;
-
-        if (balance < amount + fee)
-        {
-            throw new ValidationException($"Insufficient balance. Available: {balance}, Required: {amount + fee}");
-        }
-
-        // Estimate fee
         var feeEstimate = await blockchainService.EstimateFeeAsync();
         var estimatedFee = feeEstimate.Medium;
+
+        if (balance < amount + estimatedFee)
+        {
+            throw new ValidationException($"Insufficient balance. Available: {balance}, Required: {amount + estimatedFee}");
+        }
 
         var tx = new CryptoTransaction
         {

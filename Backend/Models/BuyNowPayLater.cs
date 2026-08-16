@@ -81,5 +81,6 @@ public enum BnplStatus
     Active = 1,
     Completed = 2,
     Defaulted = 3,
-    Cancelled = 4
+    Cancelled = 4,
+    Paused = 5
 }

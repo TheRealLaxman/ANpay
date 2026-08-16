@@ -9,11 +9,13 @@ public class DisputeService
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<DisputeService> _logger;
+    private readonly LedgerService _ledgerService;
 
-    public DisputeService(ApplicationDbContext context, ILogger<DisputeService> logger)
+    public DisputeService(ApplicationDbContext context, ILogger<DisputeService> logger, LedgerService ledgerService)
     {
         _context = context;
         _logger = logger;
+        _ledgerService = ledgerService;
     }
 
     public async Task<Dispute> CreateDisputeAsync(string userId, CreateDisputeDto dto)
@@ -54,20 +56,36 @@ public class DisputeService
             .ToListAsync();
     }
 
-    public async Task<Dispute?> GetDisputeByIdAsync(Guid id)
+    public async Task<Dispute?> GetDisputeByIdAsync(Guid id, string? userId = null)
     {
-        return await _context.Disputes
+        var query = _context.Disputes
             .Include(d => d.User)
             .Include(d => d.AssignedTo)
             .Include(d => d.Messages)
                 .ThenInclude(m => m.Sender)
-            .FirstOrDefaultAsync(d => d.Id == id);
+            .Where(d => d.Id == id);
+
+        // If userId provided, restrict to owner or admin roles
+        if (!string.IsNullOrEmpty(userId))
+        {
+            query = query.Where(d => d.UserId == userId);
+        }
+
+        return await query.FirstOrDefaultAsync();
     }
 
     public async Task<DisputeMessage> AddMessageAsync(Guid disputeId, string senderId, string content, bool isInternal = false)
     {
         var dispute = await _context.Disputes.FindAsync(disputeId)
             ?? throw new NotFoundException("Dispute not found");
+
+        // Verify sender is dispute owner or has admin role
+        if (dispute.UserId != senderId)
+        {
+            var user = await _context.Users.FindAsync(senderId);
+            if (user == null || (user.Role != AppUserRole.SuperAdmin && user.Role != AppUserRole.MainBranchAdmin && user.Role != AppUserRole.BranchAdmin))
+                throw new ValidationException("You can only add messages to your own disputes");
+        }
 
         var message = new DisputeMessage
         {
@@ -119,34 +137,55 @@ public class DisputeService
 
         if (approve)
         {
-            dispute.Status = DisputeStatus.Resolved;
             dispute.RefundAmount = refundAmount;
             dispute.Resolution = resolution;
 
-            if (refundAmount > 0 && dispute.TransactionId.HasValue)
+            if (refundAmount.HasValue && refundAmount.Value > 0 && dispute.TransactionId.HasValue)
             {
                 var transaction = await _context.Transactions.FirstOrDefaultAsync(t => t.Id == dispute.TransactionId.Value);
                 if (transaction != null)
                 {
-                    var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.Id == transaction.WalletId);
-                    if (wallet != null)
+                    // Validate refund amount does not exceed original transaction
+                    if (refundAmount.Value > transaction.Amount)
+                        throw new ValidationException($"Refund amount ({refundAmount.Value}) exceeds original transaction amount ({transaction.Amount})");
+
+                    await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+                    try
                     {
-                        wallet.Balance += refundAmount.Value;
-                        var refundTx = new Transaction
+                        var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.Id == transaction.WalletId);
+                        if (wallet != null)
                         {
-                            WalletId = wallet.Id,
-                            Type = TransactionType.Refund,
-                            Amount = refundAmount.Value,
-                            BalanceBefore = wallet.Balance - refundAmount.Value,
-                            BalanceAfter = wallet.Balance,
-                            Description = $"Refund for dispute {disputeId}",
-                            ReferenceNumber = $"RFD-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
-                            Status = TransactionStatus.Completed
-                        };
-                        _context.Transactions.Add(refundTx);
+                            var balanceBefore = wallet.Balance;
+                            wallet.Balance += refundAmount.Value;
+
+                            var refundTx = new Transaction
+                            {
+                                WalletId = wallet.Id,
+                                Type = TransactionType.Refund,
+                                Amount = refundAmount.Value,
+                                BalanceBefore = balanceBefore,
+                                BalanceAfter = wallet.Balance,
+                                Description = $"Refund for dispute {disputeId}",
+                                ReferenceNumber = $"RFD-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                                Status = TransactionStatus.Completed
+                            };
+                            _context.Transactions.Add(refundTx);
+
+                            await _ledgerService.PostWalletDepositAsync(refundTx.Id, wallet.Id, refundAmount.Value, wallet.Currency);
+                        }
+
+                        await _context.SaveChangesAsync();
+                        await dbTransaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await dbTransaction.RollbackAsync();
+                        throw;
                     }
                 }
             }
+
+            dispute.Status = DisputeStatus.Resolved;
         }
         else
         {

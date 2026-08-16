@@ -71,6 +71,14 @@ public class MicroloanController : ControllerBase
         return Ok(loan);
     }
 
+    [HttpPost("{id}/disburse")]
+    [Authorize(Roles = "SuperAdmin,BranchAdmin")]
+    public async Task<ActionResult<Microloan>> DisburseLoan(Guid id)
+    {
+        var loan = await _microloanService.DisburseLoanAsync(id);
+        return Ok(loan);
+    }
+
     private string? GetUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier);
 }
 

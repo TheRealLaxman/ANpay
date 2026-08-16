@@ -11,7 +11,7 @@ namespace ANpay.Api.Controllers;
 public class MerchantController : ControllerBase
 {
     private readonly MerchantService _merchantService;
-    private string UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+    private string? UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
     public MerchantController(MerchantService merchantService)
     {
@@ -38,6 +38,7 @@ public class MerchantController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var merchant = await _merchantService.GetByIdAsync(id);
+        if (merchant == null) return NotFound();
         return Ok(merchant);
     }
 

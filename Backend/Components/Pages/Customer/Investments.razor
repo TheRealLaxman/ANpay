@@ -15,6 +15,19 @@
         </div>
     </div>
 
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>@error</div>
+    }
+
+    @if (loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
+        </div>
+    }
+    else
+    {
     <ul class="nav nav-tabs mb-4">
         <li class="nav-item">
             <button class="nav-link @(activeTab == "investments" ? "active" : "")" @onclick='() => activeTab = "investments"'>Investments</button>
@@ -40,7 +53,7 @@
                             <li><i class="bi bi-check-circle text-success me-2"></i>Minimum ₦50,000</li>
                             <li><i class="bi bi-check-circle text-success me-2"></i>30-365 days tenure</li>
                         </ul>
-                        <button class="btn btn-success w-100" @onclick="InvestFixedDeposit">Invest Now</button>
+                        <button class="btn btn-success w-100" @onclick="@(() => ShowInvestModal("Fixed Deposit", 15, 50000))">Invest Now</button>
                     </div>
                 </div>
             </div>
@@ -68,7 +81,7 @@
                             <li><i class="bi bi-check-circle text-info me-2"></i>8-12% returns</li>
                             <li><i class="bi bi-check-circle text-info me-2"></i>Minimum ₦100,000</li>
                         </ul>
-                        <button class="btn btn-info w-100" @onclick="InvestTreasuryBill">Invest Now</button>
+                        <button class="btn btn-info w-100" @onclick='() => ShowInvestModal("Treasury Bill", 10, 100000)'>Invest Now</button>
                     </div>
                 </div>
             </div>
@@ -144,13 +157,14 @@
                                 <small class="text-muted d-block mt-2">Target: @goal.TargetDate.ToString("MMM dd, yyyy")</small>
                             </div>
                             <div class="card-footer">
-                                <button class="btn btn-outline-success w-100" @onclick="() => ShowContributeModal(goal)">Add Funds</button>
+                        <button class="btn btn-outline-success w-100" @onclick="() => ShowContributeModal(goal)">Add Funds</button>
                             </div>
                         </div>
                     </div>
                 }
             }
         </div>
+    }
     }
 </div>
 
@@ -159,13 +173,114 @@
     private List<Investment>? investments;
     private List<SavingsGoal>? savingsGoals;
     private List<WalletDto>? wallets;
+    private bool loading = true;
+    private string error = string.Empty;
+
+    // Investment modal state
+    private bool showInvestModal;
+    private string investProductName = "";
+    private decimal investRate;
+    private decimal investMinAmount;
+    private decimal investAmount;
+    private int investTenureDays = 30;
+    private Guid investWalletId;
+
+    // Savings goal modal state
+    private bool showGoalModal;
+    private string goalName = "";
+    private decimal goalTargetAmount;
+    private DateTime goalTargetDate = DateTime.UtcNow.AddMonths(6);
+    private Guid goalWalletId;
+
+    // Contribute modal state
+    private bool showContributeModal;
+    private SavingsGoal? contributeGoal;
+    private decimal contributeAmount;
 
     protected override async Task OnInitializedAsync()
     {
         if (!AuthState.IsLoggedIn) return;
-        investments = await ApiService.GetAsync<List<Investment>>("/api/investment");
-        savingsGoals = await ApiService.GetAsync<List<SavingsGoal>>("/api/investment/savings-goals");
-        wallets = await ApiService.GetAsync<List<WalletDto>>("/api/wallet");
+        try
+        {
+            investments = await ApiService.GetAsync<List<Investment>>("/api/investment");
+            savingsGoals = await ApiService.GetAsync<List<SavingsGoal>>("/api/investment/savings-goals");
+            wallets = await ApiService.GetAsync<List<WalletDto>>("/api/wallet");
+        }
+        catch (Exception ex) { error = $"Failed to load data: {ex.Message}"; }
+        finally { loading = false; }
+    }
+
+    private void ShowInvestModal(string product, decimal rate, decimal min)
+    {
+        investProductName = product;
+        investRate = rate;
+        investMinAmount = min;
+        investAmount = min;
+        investWalletId = wallets?.FirstOrDefault()?.Id ?? Guid.Empty;
+        showInvestModal = true;
+    }
+
+    private void ShowGoalModal()
+    {
+        goalName = "";
+        goalTargetAmount = 10000;
+        goalTargetDate = DateTime.UtcNow.AddMonths(6);
+        goalWalletId = wallets?.FirstOrDefault()?.Id ?? Guid.Empty;
+        showGoalModal = true;
+    }
+
+    private void ShowContributeModal(SavingsGoal goal)
+    {
+        contributeGoal = goal;
+        contributeAmount = goal.AutoSaveAmount > 0 ? goal.AutoSaveAmount : 1000;
+        showContributeModal = true;
+    }
+
+    private async Task SubmitInvestment()
+    {
+        try
+        {
+            showInvestModal = false;
+            await ApiService.PostAsync<Investment>("/api/investment", new
+            {
+                WalletId = investWalletId,
+                ProductName = investProductName,
+                PrincipalAmount = investAmount,
+                InterestRate = investRate,
+                TenureDays = investTenureDays
+            });
+            investments = await ApiService.GetAsync<List<Investment>>("/api/investment");
+        }
+        catch (Exception ex) { error = $"Investment failed: {ex.Message}"; }
+    }
+
+    private async Task SubmitGoal()
+    {
+        try
+        {
+            showGoalModal = false;
+            await ApiService.PostAsync<SavingsGoal>("/api/investment/savings-goal", new
+            {
+                WalletId = goalWalletId,
+                GoalName = goalName,
+                TargetAmount = goalTargetAmount,
+                TargetDate = goalTargetDate
+            });
+            savingsGoals = await ApiService.GetAsync<List<SavingsGoal>>("/api/investment/savings-goals");
+        }
+        catch (Exception ex) { error = $"Failed to create goal: {ex.Message}"; }
+    }
+
+    private async Task SubmitContribution()
+    {
+        if (contributeGoal == null) return;
+        try
+        {
+            showContributeModal = false;
+            await ApiService.PostAsync<object>($"/api/investment/savings-goal/{contributeGoal.Id}/contribute", new { Amount = contributeAmount });
+            savingsGoals = await ApiService.GetAsync<List<SavingsGoal>>("/api/investment/savings-goals");
+        }
+        catch (Exception ex) { error = $"Contribution failed: {ex.Message}"; }
     }
 
     private async Task WithdrawInvestment(Guid id)
@@ -176,12 +291,6 @@
             await ApiService.PostAsync<Investment>($"/api/investment/{id}/withdraw", new { WalletId = wallets.First().Id });
             investments = await ApiService.GetAsync<List<Investment>>("/api/investment");
         }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        catch (Exception ex) { error = $"Withdrawal failed: {ex.Message}"; }
     }
-
-    private void ShowInvestModal(string product, decimal rate, decimal min) { }
-    private void ShowGoalModal() { }
-    private void ShowContributeModal(SavingsGoal goal) { }
-    private void InvestFixedDeposit() => ShowInvestModal("Fixed Deposit", 15, 50000);
-    private void InvestTreasuryBill() => ShowInvestModal("Treasury Bill", 10, 100000);
 }

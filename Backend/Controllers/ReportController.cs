@@ -112,7 +112,7 @@ public class ReportController : ControllerBase
         sb.AppendLine("TransactionId,Type,Amount,Currency,Status,UserEmail,UserName,BranchId,CreatedAt");
         foreach (var t in transactions)
         {
-            sb.AppendLine($"{t.TransactionId},{t.Type},{t.Amount},{t.Currency},{t.Status},\"{t.UserEmail}\",\"{t.UserName}\",{t.BranchId},{t.CreatedAt:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"{t.TransactionId},{t.Type},{t.Amount},{t.Currency},{t.Status},\"{SanitizeCsvField(t.UserEmail)}\",\"{SanitizeCsvField(t.UserName)}\",{t.BranchId},{t.CreatedAt:yyyy-MM-dd HH:mm:ss}");
         }
         return sb.ToString();
     }
@@ -131,8 +131,17 @@ public class ReportController : ControllerBase
         sb.AppendLine("BranchId,BranchName,Status,EmployeeCount,TotalTransactions,TodayTransactions,TotalVolume,TodayVolume,WalletCount,TotalBalance");
         foreach (var b in branches)
         {
-            sb.AppendLine($"{b.BranchId},\"{b.BranchName}\",{b.Status},{b.EmployeeCount},{b.TotalTransactions},{b.TodayTransactions},{b.TotalVolume},{b.TodayVolume},{b.WalletCount},{b.TotalBalance}");
+            sb.AppendLine($"{b.BranchId},\"{SanitizeCsvField(b.BranchName)}\",{b.Status},{b.EmployeeCount},{b.TotalTransactions},{b.TodayTransactions},{b.TotalVolume},{b.TodayVolume},{b.WalletCount},{b.TotalBalance}");
         }
         return sb.ToString();
+    }
+
+    private static string SanitizeCsvField(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        // Prevent CSV injection by prefixing dangerous characters
+        if (value.Length > 0 && (value[0] == '=' || value[0] == '+' || value[0] == '-' || value[0] == '@' || value[0] == '\t' || value[0] == '\r'))
+            return "'" + value.Replace("\"", "\"\"");
+        return value.Replace("\"", "\"\"");
     }
 }

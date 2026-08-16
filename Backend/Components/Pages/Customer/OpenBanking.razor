@@ -128,34 +128,86 @@
     private List<OpenBankingAccount>? bankAccounts;
     private List<ApiKey>? apiKeys;
     private List<Webhook>? webhooks;
+    private bool loading = true;
+    private string error = string.Empty;
+
+    // Modal states
+    private bool showConnectModal;
+    private bool showApiKeyModal;
+    private bool showWebhookModal;
+    private string connectBankName = "";
+    private string connectAccountNumber = "";
+    private string apiKeyName = "";
+    private string webhookUrl = "";
+    private string webhookEvent = "";
 
     protected override async Task OnInitializedAsync()
     {
         if (!AuthState.IsLoggedIn) return;
-        bankAccounts = await ApiService.GetAsync<List<OpenBankingAccount>>("/api/openbanking/bank-accounts");
-        apiKeys = await ApiService.GetAsync<List<ApiKey>>("/api/openbanking/api-keys");
-        webhooks = await ApiService.GetAsync<List<Webhook>>("/api/openbanking/webhooks");
+        try
+        {
+            await AuthState.InitializeAsync();
+            ApiService.SetToken(AuthState.Token);
+            bankAccounts = await ApiService.GetAsync<List<OpenBankingAccount>>("/api/openbanking/bank-accounts");
+            apiKeys = await ApiService.GetAsync<List<ApiKey>>("/api/openbanking/api-keys");
+            webhooks = await ApiService.GetAsync<List<Webhook>>("/api/openbanking/webhooks");
+        }
+        catch (Exception ex) { error = $"Failed to load data: {ex.Message}"; }
+        finally { loading = false; }
     }
 
-    private void ShowConnectModal() { }
-    private void ShowApiKeyModal() { }
-    private void ShowWebhookModal() { }
+    private void ShowConnectModal() { connectBankName = ""; connectAccountNumber = ""; showConnectModal = true; }
+    private void ShowApiKeyModal() { apiKeyName = ""; showApiKeyModal = true; }
+    private void ShowWebhookModal() { webhookUrl = ""; webhookEvent = ""; showWebhookModal = true; }
+
+    private async Task SubmitConnectBank()
+    {
+        try
+        {
+            showConnectModal = false;
+            await ApiService.PostAsync<OpenBankingAccount>("/api/openbanking/bank-accounts", new { BankName = connectBankName, AccountNumber = connectAccountNumber });
+            bankAccounts = await ApiService.GetAsync<List<OpenBankingAccount>>("/api/openbanking/bank-accounts");
+        }
+        catch (Exception ex) { error = $"Failed to connect bank: {ex.Message}"; }
+    }
+
+    private async Task SubmitApiKey()
+    {
+        try
+        {
+            showApiKeyModal = false;
+            await ApiService.PostAsync<ApiKey>("/api/openbanking/api-keys", new { Name = apiKeyName });
+            apiKeys = await ApiService.GetAsync<List<ApiKey>>("/api/openbanking/api-keys");
+        }
+        catch (Exception ex) { error = $"Failed to create API key: {ex.Message}"; }
+    }
+
+    private async Task SubmitWebhook()
+    {
+        try
+        {
+            showWebhookModal = false;
+            await ApiService.PostAsync<Webhook>("/api/openbanking/webhooks", new { Url = webhookUrl, EventType = webhookEvent });
+            webhooks = await ApiService.GetAsync<List<Webhook>>("/api/openbanking/webhooks");
+        }
+        catch (Exception ex) { error = $"Failed to create webhook: {ex.Message}"; }
+    }
 
     private async Task DisconnectBank(Guid id)
     {
         try { await ApiService.PostAsync<OpenBankingAccount>($"/api/openbanking/bank-accounts/{id}/disconnect", null); bankAccounts = await ApiService.GetAsync<List<OpenBankingAccount>>("/api/openbanking/bank-accounts"); }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        catch (Exception ex) { error = $"Failed to disconnect: {ex.Message}"; }
     }
 
     private async Task RevokeKey(Guid id)
     {
         try { await ApiService.PostAsync<ApiKey>($"/api/openbanking/api-keys/{id}/revoke", null); apiKeys = await ApiService.GetAsync<List<ApiKey>>("/api/openbanking/api-keys"); }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        catch (Exception ex) { error = $"Failed to revoke key: {ex.Message}"; }
     }
 
     private async Task ToggleWebhook(Guid id)
     {
         try { await ApiService.PostAsync<Webhook>($"/api/openbanking/webhooks/{id}/toggle", null); webhooks = await ApiService.GetAsync<List<Webhook>>("/api/openbanking/webhooks"); }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        catch (Exception ex) { error = $"Failed to toggle webhook: {ex.Message}"; }
     }
 }

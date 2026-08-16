@@ -9,11 +9,13 @@ public class InvestmentService
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<InvestmentService> _logger;
+    private readonly LedgerService _ledgerService;
 
-    public InvestmentService(ApplicationDbContext context, ILogger<InvestmentService> logger)
+    public InvestmentService(ApplicationDbContext context, ILogger<InvestmentService> logger, LedgerService ledgerService)
     {
         _context = context;
         _logger = logger;
+        _ledgerService = ledgerService;
     }
 
     public async Task<Investment> CreateInvestmentAsync(string userId, Guid walletId, InvestmentType type, string productName, decimal amount, int tenureDays, decimal interestRate, bool autoRenew = false)
@@ -24,7 +26,7 @@ public class InvestmentService
         if (wallet == null) throw new NotFoundException("Wallet not found");
 
         if (amount < 10000) throw new ValidationException("Minimum investment is ₦10,000");
-        if (wallet.Balance < amount) throw new ValidationException("Insufficient balance");
+        if (wallet.AvailableBalance < amount) throw new ValidationException("Insufficient available balance");
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -64,6 +66,9 @@ public class InvestmentService
             };
 
             _context.Transactions.Add(txRecord);
+
+            await _ledgerService.PostWalletWithdrawalAsync(txRecord.Id, walletId, amount, wallet.Currency);
+
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
@@ -105,6 +110,7 @@ public class InvestmentService
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            var balanceBefore = wallet.Balance;
             wallet.Balance += payoutAmount;
 
             investment.Status = InvestmentStatus.Withdrawn;
@@ -114,7 +120,7 @@ public class InvestmentService
                 WalletId = walletId,
                 Type = TransactionType.Deposit,
                 Amount = payoutAmount,
-                BalanceBefore = wallet.Balance - payoutAmount,
+                BalanceBefore = balanceBefore,
                 BalanceAfter = wallet.Balance,
                 Description = $"Investment withdrawal - {investment.ProductName}{(isEarlyWithdrawal ? " (early)" : "")}",
                 ReferenceNumber = $"INV-WD-{Guid.NewGuid().ToString()[..8].ToUpper()}",
@@ -122,6 +128,8 @@ public class InvestmentService
             };
 
             _context.Transactions.Add(txRecord);
+
+            await _ledgerService.PostWalletDepositAsync(txRecord.Id, walletId, payoutAmount, wallet.Currency);
 
             var invTx = new InvestmentTransaction
             {
@@ -183,11 +191,12 @@ public class InvestmentService
         var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.Id == walletId && w.UserId == userId);
         if (wallet == null) throw new NotFoundException("Wallet not found");
 
-        if (wallet.Balance < amount) throw new ValidationException("Insufficient balance");
+        if (wallet.AvailableBalance < amount) throw new ValidationException("Insufficient available balance");
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            var balanceBefore = wallet.Balance;
             wallet.Balance -= amount;
             goal.CurrentAmount += amount;
 

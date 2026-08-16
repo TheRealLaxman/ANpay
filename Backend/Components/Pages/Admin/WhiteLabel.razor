@@ -74,14 +74,40 @@
 
 @code {
     private List<WhiteLabelTenant>? tenants;
+    private bool loading = true;
+    private string error = string.Empty;
+
+    // Create tenant modal state
+    private bool showCreateModal;
+    private string tenantName = "";
+    private string tenantDomain = "";
+    private string tenantAdminEmail = "";
 
     protected override async Task OnInitializedAsync()
     {
         if (!AuthState.IsLoggedIn) return;
-        tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
+        try
+        {
+            await AuthState.InitializeAsync();
+            ApiService.SetToken(AuthState.Token);
+            tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
+        }
+        catch (Exception ex) { error = $"Failed to load tenants: {ex.Message}"; }
+        finally { loading = false; }
     }
 
-    private void ShowCreateModal() { }
+    private void ShowCreateModal() { tenantName = ""; tenantDomain = ""; tenantAdminEmail = ""; showCreateModal = true; }
+
+    private async Task SubmitCreateTenant()
+    {
+        try
+        {
+            showCreateModal = false;
+            await ApiService.PostAsync<WhiteLabelTenant>("/api/whitelabel/tenants", new { Name = tenantName, Domain = tenantDomain, AdminEmail = tenantAdminEmail });
+            tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
+        }
+        catch (Exception ex) { error = $"Failed to create tenant: {ex.Message}"; }
+    }
 
     private async Task ActivateTenant(Guid id)
     {
@@ -90,7 +116,7 @@
             await ApiService.PostAsync<WhiteLabelTenant>($"/api/whitelabel/tenants/{id}/activate", null);
             tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
         }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        catch (Exception ex) { error = $"Failed to activate tenant: {ex.Message}"; }
     }
 
     private async Task SuspendTenant(Guid id)
@@ -100,7 +126,7 @@
             await ApiService.PostAsync<WhiteLabelTenant>($"/api/whitelabel/tenants/{id}/suspend", null);
             tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
         }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        catch (Exception ex) { error = $"Failed to suspend tenant: {ex.Message}"; }
     }
 
     private void ViewUsers(Guid id) { }

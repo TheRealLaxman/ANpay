@@ -214,7 +214,7 @@ public class MockBillPaymentProvider : IBillPaymentProvider
         _logger.LogInformation("MockBillProvider: Processing payment {Amount} to {Provider}", request.Amount, request.ProviderCode);
         await Task.Delay(500);
 
-        var success = _logger != null; // Simulate 90% success
+        var success = Random.Shared.Next(100) < 90; // Simulate 90% success
         var reference = $"MOCK-BILL-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}";
 
         return new BillPaymentResponse

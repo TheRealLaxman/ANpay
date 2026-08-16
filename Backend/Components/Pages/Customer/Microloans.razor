@@ -70,13 +70,72 @@
     private bool showApplyModal = false;
     private bool showRepayModal = false;
     private Microloan? selectedLoan;
+    private bool loading = true;
+    private string error = string.Empty;
+
+    // Apply loan modal state
+    private decimal applyAmount = 1000;
+    private int applyTenureDays = 30;
+    private Guid applyWalletId;
+
+    // Repay modal state
+    private decimal repayAmount;
 
     protected override async Task OnInitializedAsync()
     {
         if (!AuthState.IsLoggedIn) return;
-        loans = await ApiService.GetAsync<List<Microloan>>("/api/microloan");
+        try
+        {
+            await AuthState.InitializeAsync();
+            ApiService.SetToken(AuthState.Token);
+            loans = await ApiService.GetAsync<List<Microloan>>("/api/microloan");
+            var wallets = await ApiService.GetAsync<List<WalletDto>>("/api/wallet");
+            if (wallets != null && wallets.Any())
+                applyWalletId = wallets.First().Id;
+        }
+        catch (Exception ex) { error = $"Failed to load data: {ex.Message}"; }
+        finally { loading = false; }
     }
 
-    private void ShowApplyModal() => showApplyModal = true;
-    private void ShowRepayModal(Microloan loan) { selectedLoan = loan; showRepayModal = true; }
+    private void ShowApplyModal()
+    {
+        applyAmount = 1000;
+        applyTenureDays = 30;
+        showApplyModal = true;
+    }
+
+    private void ShowRepayModal(Microloan loan)
+    {
+        selectedLoan = loan;
+        repayAmount = loan.OutstandingAmount;
+        showRepayModal = true;
+    }
+
+    private async Task SubmitLoanApplication()
+    {
+        try
+        {
+            showApplyModal = false;
+            await ApiService.PostAsync<Microloan>("/api/microloan/apply", new
+            {
+                WalletId = applyWalletId,
+                Amount = applyAmount,
+                TenureDays = applyTenureDays
+            });
+            loans = await ApiService.GetAsync<List<Microloan>>("/api/microloan");
+        }
+        catch (Exception ex) { error = $"Loan application failed: {ex.Message}"; }
+    }
+
+    private async Task SubmitRepayment()
+    {
+        if (selectedLoan == null) return;
+        try
+        {
+            showRepayModal = false;
+            await ApiService.PostAsync<object>($"/api/microloan/{selectedLoan.Id}/repay", new { Amount = repayAmount });
+            loans = await ApiService.GetAsync<List<Microloan>>("/api/microloan");
+        }
+        catch (Exception ex) { error = $"Repayment failed: {ex.Message}"; }
+    }
 }

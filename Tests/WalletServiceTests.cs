@@ -15,7 +15,11 @@ public class WalletServiceTests : IDisposable
     private readonly ApplicationDbContext _context;
     private readonly Mock<ILogger<WalletService>> _loggerMock;
     private readonly Mock<ILogger<LedgerService>> _ledgerLoggerMock;
+    private readonly Mock<ILogger<FeeService>> _feeLoggerMock;
+    private readonly Mock<ILogger<LimitService>> _limitLoggerMock;
     private readonly LedgerService _ledgerService;
+    private readonly FeeService _feeService;
+    private readonly LimitService _limitService;
     private readonly WalletService _walletService;
 
     public WalletServiceTests()
@@ -28,8 +32,12 @@ public class WalletServiceTests : IDisposable
         _context = new ApplicationDbContext(options);
         _loggerMock = new Mock<ILogger<WalletService>>();
         _ledgerLoggerMock = new Mock<ILogger<LedgerService>>();
+        _feeLoggerMock = new Mock<ILogger<FeeService>>();
+        _limitLoggerMock = new Mock<ILogger<LimitService>>();
         _ledgerService = new LedgerService(_context, _ledgerLoggerMock.Object);
-        _walletService = new WalletService(_context, _loggerMock.Object, _ledgerService);
+        _feeService = new FeeService(_context, _feeLoggerMock.Object);
+        _limitService = new LimitService(_context, _limitLoggerMock.Object);
+        _walletService = new WalletService(_context, _loggerMock.Object, _ledgerService, _feeService, _limitService);
 
         SeedData();
     }
@@ -143,7 +151,7 @@ public class WalletServiceTests : IDisposable
 
         Assert.Equal(0, result.PendingBalance);
         Assert.Equal(0, result.FrozenBalance);
-        Assert.Equal(result.Balance - result.FrozenBalance, result.AvailableBalance);
+        Assert.Equal(result.Balance, result.AvailableBalance);
     }
 
     private ApplicationUser CreateUser(string email)
@@ -203,8 +211,8 @@ public class FraudServiceTests : IDisposable
 
         var score = await _fraudService.CalculateRiskScoreAsync(user.Id, 10m, "192.168.1.1", "Chrome/Windows");
 
-        // Unknown IP (+15) + Unknown Device (+10) = 25 minimum for new user with small amount
-        Assert.True(score <= 35);
+        // Unknown IP (+15) + Unknown Device (+10) + Unknown Browser (+5) = 30 minimum
+        Assert.True(score <= 40);
     }
 
     [Fact]
@@ -215,7 +223,8 @@ public class FraudServiceTests : IDisposable
 
         var score = await _fraudService.CalculateRiskScoreAsync(user.Id, 100000m, "192.168.1.1", "Chrome/Windows");
 
-        Assert.True(score >= 25);
+        // Large amount (VERY_LARGE_TRANSACTION +35) + Unknown IP (+15) + Unknown Device (+10) = 60 minimum
+        Assert.True(score >= 50);
     }
 
     [Fact]

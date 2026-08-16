@@ -81,6 +81,7 @@ public class MicroloanCollectionWorker : BackgroundService
                 pendingRepayment.TransactionReference = $"LOAN-AUTO-{Guid.NewGuid().ToString()[..8].ToUpper()}";
 
                 loan.OutstandingAmount -= amountToPay;
+                if (loan.OutstandingAmount < 0) loan.OutstandingAmount = 0;
                 loan.Status = MicroloanStatus.Repaying;
 
                 if (loan.OutstandingAmount <= 0)
@@ -117,13 +118,12 @@ public class MicroloanCollectionWorker : BackgroundService
     {
         var overdueLoans = await context.Microloans
             .Where(ml => (ml.Status == MicroloanStatus.Disbursed || ml.Status == MicroloanStatus.Repaying)
-                        && ml.DueDate < DateTime.UtcNow)
+                        && ml.DueDate.HasValue && ml.DueDate.Value < DateTime.UtcNow)
             .ToListAsync(ct);
 
         foreach (var loan in overdueLoans)
         {
-            if (loan.DueDate == null) continue;
-            var daysOverdue = (DateTime.UtcNow - loan.DueDate.Value).Days;
+            var daysOverdue = (DateTime.UtcNow - loan.DueDate!.Value).Days;
 
             if (daysOverdue > 30 && loan.Status != MicroloanStatus.Defaulted)
             {

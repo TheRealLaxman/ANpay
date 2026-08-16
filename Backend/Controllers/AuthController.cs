@@ -11,11 +11,13 @@ namespace ANpay.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly AuthService _authService;
+    private readonly IEmailService _emailService;
     private readonly ILogger<AuthController> _logger;
 
-    public AuthController(AuthService authService, ILogger<AuthController> logger)
+    public AuthController(AuthService authService, IEmailService emailService, ILogger<AuthController> logger)
     {
         _authService = authService;
+        _emailService = emailService;
         _logger = logger;
     }
 
@@ -83,13 +85,26 @@ public class AuthController : ControllerBase
     {
         try
         {
-            await _authService.GeneratePasswordResetTokenAsync(dto.Email);
-            return Ok(new { message = "If the email exists, a reset link has been sent." });
+            var token = await _authService.GeneratePasswordResetTokenAsync(dto.Email);
+            var appUrl = _authService.GetAppUrl();
+            var resetLink = $"{appUrl}/reset-password?email={Uri.EscapeDataString(dto.Email)}&token={Uri.EscapeDataString(token)}";
+
+            await _emailService.SendPasswordResetAsync(
+                dto.Email,
+                resetLink);
+
+            _logger.LogInformation("Password reset email sent to {Email}", dto.Email);
         }
-        catch
+        catch (Exceptions.NotFoundException)
         {
-            return Ok(new { message = "If the email exists, a reset link has been sent." });
+            _logger.LogWarning("Password reset requested for non-existent email: {Email}", dto.Email);
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending password reset email to {Email}", dto.Email);
+        }
+
+        return Ok(new { message = "If the email exists, a reset link has been sent." });
     }
 
     [HttpPost("reset-password")]
