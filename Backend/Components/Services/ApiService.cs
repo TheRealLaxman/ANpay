@@ -29,6 +29,16 @@ public class ApiService
         catch { return default; }
     }
 
+    public async Task<T?> PostAsync<T>(string endpoint, object? data)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync($"{_baseUrl}/{endpoint.TrimStart('/')}", data);
+            return await response.Content.ReadFromJsonAsync<T>();
+        }
+        catch { return default; }
+    }
+
     // Auth
     public async Task<AuthResponse> LoginAsync(string email, string password)
     {

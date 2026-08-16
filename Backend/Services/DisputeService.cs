@@ -125,22 +125,26 @@ public class DisputeService
 
             if (refundAmount > 0 && dispute.TransactionId.HasValue)
             {
-                var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.Id == dispute.TransactionId);
-                if (wallet != null)
+                var transaction = await _context.Transactions.FirstOrDefaultAsync(t => t.Id == dispute.TransactionId.Value);
+                if (transaction != null)
                 {
-                    wallet.Balance += refundAmount.Value;
-                    var refundTx = new Transaction
+                    var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.Id == transaction.WalletId);
+                    if (wallet != null)
                     {
-                        WalletId = wallet.Id,
-                        Type = TransactionType.Refund,
-                        Amount = refundAmount.Value,
-                        BalanceBefore = wallet.Balance - refundAmount.Value,
-                        BalanceAfter = wallet.Balance,
-                        Description = $"Refund for dispute {disputeId}",
-                        ReferenceNumber = $"RFD-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
-                        Status = TransactionStatus.Completed
-                    };
-                    _context.Transactions.Add(refundTx);
+                        wallet.Balance += refundAmount.Value;
+                        var refundTx = new Transaction
+                        {
+                            WalletId = wallet.Id,
+                            Type = TransactionType.Refund,
+                            Amount = refundAmount.Value,
+                            BalanceBefore = wallet.Balance - refundAmount.Value,
+                            BalanceAfter = wallet.Balance,
+                            Description = $"Refund for dispute {disputeId}",
+                            ReferenceNumber = $"RFD-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                            Status = TransactionStatus.Completed
+                        };
+                        _context.Transactions.Add(refundTx);
+                    }
                 }
             }
         }

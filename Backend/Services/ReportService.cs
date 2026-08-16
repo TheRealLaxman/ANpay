@@ -112,11 +112,11 @@ public class ReportService
 
         var totalFeesCollected = completedTransactions
             .Where(t => t.Type == TransactionType.Withdrawal || t.Type == TransactionType.TransferOut || t.Type == TransactionType.Payment)
-            .Sum(t => t.Amount);
+            .Sum(t => t.Fee);
 
         var exchangeVolume = completedTransactions
             .Where(t => t.Type == TransactionType.Deposit || t.Type == TransactionType.TransferIn)
-            .Sum(t => t.Amount);
+            .Sum(t => t.Fee);
 
         var averageTransactionAmount = totalTransactions > 0
             ? completedTransactions.Average(t => t.Amount)

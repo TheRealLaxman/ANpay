@@ -11,6 +11,9 @@ public interface IEmailService
     Task SendKycStatusAsync(string to, string firstName, bool approved, string notes);
     Task SendOtpAsync(string to, string otp);
     Task SendPasswordResetAsync(string to, string resetLink);
+    Task SendLowBalanceAlertAsync(string to, string firstName, decimal balance, string currency);
+    Task SendLoginAlertAsync(string to, string firstName, string deviceInfo, string ipAddress);
+    Task SendLoanRepaymentReminderAsync(string to, string firstName, decimal amount, DateTime dueDate);
 }
 
 public class SmtpEmailService : IEmailService
@@ -36,10 +39,16 @@ public class SmtpEmailService : IEmailService
             var fromEmail = smtpSection["FromEmail"] ?? "noreply@anpay.com";
             var fromName = smtpSection["FromName"] ?? "ANpay";
 
+            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+            {
+                _logger.LogWarning("SMTP not configured. Email to {To} with subject '{Subject}' was not sent. Configure Smtp:Username and Smtp:Password in appsettings.", to, subject);
+                return;
+            }
+
             using var client = new SmtpClient(host, port)
             {
                 Credentials = new NetworkCredential(username, password),
-                EnableSsl = true
+                EnableSsl = bool.TryParse(smtpSection["EnableSsl"], out var ssl) ? ssl : true
             };
 
             var message = new MailMessage
@@ -163,6 +172,70 @@ public class SmtpEmailService : IEmailService
             </div>";
         return SendAsync(to, "ANpay - Password Reset", body);
     }
+
+    public Task SendLowBalanceAlertAsync(string to, string firstName, decimal balance, string currency)
+    {
+        var body = $@"
+            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                <div style='background: #000; color: #fff; padding: 20px; text-align: center;'>
+                    <h1 style='margin: 0;'><span style='color: #ef4444;'>AN</span>pay Low Balance Alert</h1>
+                </div>
+                <div style='padding: 30px; background: #1a1a2e; color: #fff; text-align: center;'>
+                    <h2 style='color: #f59e0b;'>Low Balance Warning</h2>
+                    <p>Dear {firstName},</p>
+                    <p>Your wallet balance is running low.</p>
+                    <div style='background: #0f0f23; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                        <span style='font-size: 24px; font-weight: bold; color: #f59e0b;'>{currency} {balance:N2}</span>
+                    </div>
+                    <p>Consider topping up your wallet to continue enjoying seamless transactions.</p>
+                </div>
+            </div>";
+        return SendAsync(to, "ANpay - Low Balance Alert", body);
+    }
+
+    public Task SendLoginAlertAsync(string to, string firstName, string deviceInfo, string ipAddress)
+    {
+        var body = $@"
+            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                <div style='background: #000; color: #fff; padding: 20px; text-align: center;'>
+                    <h1 style='margin: 0;'><span style='color: #ef4444;'>AN</span>pay Security Alert</h1>
+                </div>
+                <div style='padding: 30px; background: #1a1a2e; color: #fff; text-align: center;'>
+                    <h2 style='color: #22c55e;'>New Login Detected</h2>
+                    <p>Dear {firstName},</p>
+                    <p>A new login was detected on your account.</p>
+                    <table style='width: 100%; border-collapse: collapse; margin: 20px 0;'>
+                        <tr><td style='padding: 8px 0; color: #888;'>Device</td><td style='padding: 8px 0;'>{deviceInfo}</td></tr>
+                        <tr><td style='padding: 8px 0; color: #888;'>IP Address</td><td style='padding: 8px 0;'>{ipAddress}</td></tr>
+                        <tr><td style='padding: 8px 0; color: #888;'>Time</td><td style='padding: 8px 0;'>{DateTime.UtcNow:MMM dd, yyyy HH:mm} UTC</td></tr>
+                    </table>
+                    <p>If this wasn't you, please change your password immediately.</p>
+                </div>
+            </div>";
+        return SendAsync(to, "ANpay - Security Alert: New Login", body);
+    }
+
+    public Task SendLoanRepaymentReminderAsync(string to, string firstName, decimal amount, DateTime dueDate)
+    {
+        var body = $@"
+            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                <div style='background: #000; color: #fff; padding: 20px; text-align: center;'>
+                    <h1 style='margin: 0;'><span style='color: #ef4444;'>AN</span>pay Loan Reminder</h1>
+                </div>
+                <div style='padding: 30px; background: #1a1a2e; color: #fff; text-align: center;'>
+                    <h2 style='color: #f59e0b;'>Repayment Due Soon</h2>
+                    <p>Dear {firstName},</p>
+                    <p>You have a loan repayment due soon.</p>
+                    <div style='background: #0f0f23; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                        <p style='color: #888; margin: 0;'>Amount Due</p>
+                        <span style='font-size: 24px; font-weight: bold; color: #ef4444;'>NGN {amount:N2}</span>
+                        <p style='color: #888; margin: 10px 0 0;'>Due Date: {dueDate:MMM dd, yyyy}</p>
+                    </div>
+                    <p>Ensure your wallet has sufficient balance for auto-debit.</p>
+                </div>
+            </div>";
+        return SendAsync(to, "ANpay - Loan Repayment Reminder", body);
+    }
 }
 
 public class ConsoleEmailService : IEmailService
@@ -207,6 +280,24 @@ public class ConsoleEmailService : IEmailService
     public Task SendPasswordResetAsync(string to, string resetLink)
     {
         _logger.LogInformation("[EMAIL] Password reset to {To}", to);
+        return Task.CompletedTask;
+    }
+
+    public Task SendLowBalanceAlertAsync(string to, string firstName, decimal balance, string currency)
+    {
+        _logger.LogInformation("[EMAIL] Low balance alert to {To}: {Balance} {Currency}", to, balance, currency);
+        return Task.CompletedTask;
+    }
+
+    public Task SendLoginAlertAsync(string to, string firstName, string deviceInfo, string ipAddress)
+    {
+        _logger.LogInformation("[EMAIL] Login alert to {To}: {Device} from {IP}", to, deviceInfo, ipAddress);
+        return Task.CompletedTask;
+    }
+
+    public Task SendLoanRepaymentReminderAsync(string to, string firstName, decimal amount, DateTime dueDate)
+    {
+        _logger.LogInformation("[EMAIL] Loan reminder to {To}: {Amount} due {Date}", to, amount, dueDate);
         return Task.CompletedTask;
     }
 }

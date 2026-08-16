@@ -1,0 +1,161 @@
+@page "/customer/open-banking"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>Open Banking - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-plug me-2"></i>Open Banking</h2>
+            <p class="text-muted">Connect your bank accounts and manage API access.</p>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "banks" ? "active" : "")" @onclick='() => activeTab = "banks"'>Connected Banks</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "apikeys" ? "active" : "")" @onclick='() => activeTab = "apikeys"'>API Keys</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "webhooks" ? "active" : "")" @onclick='() => activeTab = "webhooks"'>Webhooks</button>
+        </li>
+    </ul>
+
+    @if (activeTab == "banks")
+    {
+        <div class="row mb-3">
+            <div class="col">
+                <button class="btn btn-primary" @onclick="ShowConnectModal"><i class="bi bi-plus-circle me-1"></i>Connect Bank Account</button>
+            </div>
+        </div>
+        @if (bankAccounts != null && bankAccounts.Any())
+        {
+            <div class="row">
+                @foreach (var account in bankAccounts)
+                {
+                    <div class="col-md-4 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5>@account.BankName</h5>
+                                <p class="text-muted">@account.AccountNumber</p>
+                                <p class="fw-bold">₦@account.Balance.ToString("N2")</p>
+                                <span class="badge @(account.Status == OpenBankingAccountStatus.Connected ? "bg-success" : "bg-secondary")">@account.Status</span>
+                            </div>
+                            <div class="card-footer">
+                                <button class="btn btn-outline-danger btn-sm w-100" @onclick="() => DisconnectBank(account.Id)">Disconnect</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else if (activeTab == "apikeys")
+    {
+        <div class="row mb-3">
+            <div class="col">
+                <button class="btn btn-primary" @onclick="ShowApiKeyModal"><i class="bi bi-plus-circle me-1"></i>Create API Key</button>
+            </div>
+        </div>
+        @if (apiKeys != null && apiKeys.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead><tr><th>Name</th><th>Key</th><th>Scope</th><th>Usage</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody>
+                        @foreach (var key in apiKeys)
+                        {
+                            <tr>
+                                <td>@key.Name</td>
+                                <td><code>@key.Key[..16]...</code></td>
+                                <td>@key.Scope</td>
+                                <td>@key.UsageCount / @key.MaxUsagePerDay</td>
+                                <td>@key.ExpiresAt.ToString("MMM dd, yyyy")</td>
+                                <td><span class="badge @(key.IsActive ? "bg-success" : "bg-secondary")">@(key.IsActive ? "Active" : "Revoked")</span></td>
+                                <td>
+                                    @if (key.IsActive)
+                                    {
+                                        <button class="btn btn-outline-danger btn-sm" @onclick="() => RevokeKey(key.Id)">Revoke</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else if (activeTab == "webhooks")
+    {
+        <div class="row mb-3">
+            <div class="col">
+                <button class="btn btn-primary" @onclick="ShowWebhookModal"><i class="bi bi-plus-circle me-1"></i>Create Webhook</button>
+            </div>
+        </div>
+        @if (webhooks != null && webhooks.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead><tr><th>Name</th><th>URL</th><th>Events</th><th>Success</th><th>Failed</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody>
+                        @foreach (var wh in webhooks)
+                        {
+                            <tr>
+                                <td>@wh.Name</td>
+                                <td><code>@wh.Url</code></td>
+                                <td>@wh.Events</td>
+                                <td>@wh.SuccessCount</td>
+                                <td>@wh.FailureCount</td>
+                                <td><span class="badge @(wh.IsActive ? "bg-success" : "bg-secondary")">@(wh.IsActive ? "Active" : "Paused")</span></td>
+                                <td><button class="btn btn-outline-warning btn-sm" @onclick="() => ToggleWebhook(wh.Id)">Toggle</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private string activeTab = "banks";
+    private List<OpenBankingAccount>? bankAccounts;
+    private List<ApiKey>? apiKeys;
+    private List<Webhook>? webhooks;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        bankAccounts = await ApiService.GetAsync<List<OpenBankingAccount>>("/api/openbanking/bank-accounts");
+        apiKeys = await ApiService.GetAsync<List<ApiKey>>("/api/openbanking/api-keys");
+        webhooks = await ApiService.GetAsync<List<Webhook>>("/api/openbanking/webhooks");
+    }
+
+    private void ShowConnectModal() { }
+    private void ShowApiKeyModal() { }
+    private void ShowWebhookModal() { }
+
+    private async Task DisconnectBank(Guid id)
+    {
+        try { await ApiService.PostAsync<OpenBankingAccount>($"/api/openbanking/bank-accounts/{id}/disconnect", null); bankAccounts = await ApiService.GetAsync<List<OpenBankingAccount>>("/api/openbanking/bank-accounts"); }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task RevokeKey(Guid id)
+    {
+        try { await ApiService.PostAsync<ApiKey>($"/api/openbanking/api-keys/{id}/revoke", null); apiKeys = await ApiService.GetAsync<List<ApiKey>>("/api/openbanking/api-keys"); }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task ToggleWebhook(Guid id)
+    {
+        try { await ApiService.PostAsync<Webhook>($"/api/openbanking/webhooks/{id}/toggle", null); webhooks = await ApiService.GetAsync<List<Webhook>>("/api/openbanking/webhooks"); }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+}

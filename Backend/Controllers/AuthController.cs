@@ -22,7 +22,7 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register([FromBody] RegisterDto dto)
     {
-        var result = await _authService.RegisterAsync(dto);
+        var result = await _authService.RegisterAsync(dto, HttpContext.Connection.RemoteIpAddress?.ToString());
         if (!result.Success)
             return BadRequest(result);
         return Ok(result);
@@ -35,6 +35,26 @@ public class AuthController : ControllerBase
         if (!result.Success)
             return Unauthorized(result);
         return Ok(result);
+    }
+
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResponseDto>> RefreshToken([FromBody] RefreshTokenDto dto)
+    {
+        var result = await _authService.RefreshTokenAsync(dto.RefreshToken, HttpContext.Connection.RemoteIpAddress?.ToString());
+        if (!result.Success)
+            return Unauthorized(result);
+        return Ok(result);
+    }
+
+    [Authorize]
+    [HttpPost("revoke")]
+    public async Task<IActionResult> RevokeToken([FromBody] RefreshTokenDto dto)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+        await _authService.RevokeRefreshTokenAsync(dto.RefreshToken, userId);
+        return Ok(new { message = "Token revoked" });
     }
 
     [Authorize]
@@ -63,8 +83,8 @@ public class AuthController : ControllerBase
     {
         try
         {
-            var token = await _authService.GeneratePasswordResetTokenAsync(dto.Email);
-            return Ok(new { message = "If the email exists, a reset link has been sent.", token });
+            await _authService.GeneratePasswordResetTokenAsync(dto.Email);
+            return Ok(new { message = "If the email exists, a reset link has been sent." });
         }
         catch
         {

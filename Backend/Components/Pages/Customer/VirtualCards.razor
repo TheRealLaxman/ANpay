@@ -1,0 +1,283 @@
+@page "/customer/virtual-cards"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>Virtual Cards - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-credit-card me-2"></i>Virtual Cards</h2>
+            <p class="text-muted">Create and manage your virtual cards for safe online shopping.</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="ShowCreateModal">
+                <i class="bi bi-plus-circle me-1"></i>Create Card
+            </button>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (cards == null || !cards.Any())
+    {
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-credit-card display-1 text-muted"></i>
+                <h4 class="mt-3">No Virtual Cards</h4>
+                <p class="text-muted">Create your first virtual card to shop safely online.</p>
+                <button class="btn btn-primary" @onclick="ShowCreateModal">Create Virtual Card</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            @foreach (var card in cards)
+            {
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100 @(card.Status == VirtualCardStatus.Frozen ? "border-warning" : card.Status == VirtualCardStatus.Active ? "border-success" : "border-secondary")">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span class="badge @(card.Status == VirtualCardStatus.Active ? "bg-success" : card.Status == VirtualCardStatus.Frozen ? "bg-warning" : "bg-secondary")">
+                                @card.Status
+                            </span>
+                            <span class="badge bg-info">@card.CardType</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <small class="text-muted">Card Number</small>
+                                <div class="fw-bold font-monospace">****-****-****-@card.CardNumber[^4..]</div>
+                            </div>
+                            <div class="mb-3">
+                                <small class="text-muted">Card Holder</small>
+                                <div>@card.CardHolderName</div>
+                            </div>
+                            <div class="row">
+                                <div class="col-6">
+                                    <small class="text-muted">Expiry</small>
+                                    <div>@card.ExpiryMonth/@card.ExpiryYear</div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Currency</small>
+                                    <div>@card.Currency</div>
+                                </div>
+                            </div>
+                            <hr />
+                            <div class="row">
+                                <div class="col-6">
+                                    <small class="text-muted">Daily Limit</small>
+                                    <div>@card.DailyLimit.ToString("N2")</div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Monthly Limit</small>
+                                    <div>@card.MonthlyLimit.ToString("N2")</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <div class="btn-group w-100" role="group">
+                                @if (card.Status == VirtualCardStatus.Active)
+                                {
+                                    <button class="btn btn-outline-warning btn-sm" @onclick="() => FreezeCard(card.Id)">
+                                        <i class="bi bi-pause-circle"></i> Freeze
+                                    </button>
+                                }
+                                else if (card.Status == VirtualCardStatus.Frozen)
+                                {
+                                    <button class="btn btn-outline-success btn-sm" @onclick="() => UnfreezeCard(card.Id)">
+                                        <i class="bi bi-play-circle"></i> Unfreeze
+                                    </button>
+                                }
+                                <button class="btn btn-outline-info btn-sm" @onclick="() => ToggleOnline(card.Id)">
+                                    <i class="bi bi-globe"></i> Online: @(card.AllowOnlinePayments ? "ON" : "OFF")
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm" @onclick="() => CloseCard(card.Id)">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (showCreateModal)
+    {
+        <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5)">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Create Virtual Card</h5>
+                        <button type="button" class="btn-close" @onclick="HideCreateModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Wallet</label>
+                            <select class="form-select" @bind="newCard.WalletId">
+                                <option value="">Select Wallet</option>
+                                @if (wallets != null)
+                                {
+                                    @foreach (var wallet in wallets)
+                                    {
+                                        <option value="@wallet.Id">@wallet.WalletName (@wallet.Currency @wallet.Balance.ToString("N2"))</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Card Holder Name</label>
+                            <input type="text" class="form-control" @bind="newCard.CardHolderName" placeholder="Name on card" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Card Type</label>
+                            <select class="form-select" @bind="newCard.CardType">
+                                <option value="0">Standard</option>
+                                <option value="1">Premium</option>
+                                <option value="2">Business</option>
+                                <option value="3">Disposable</option>
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Daily Limit</label>
+                                <input type="number" class="form-control" @bind="newCard.DailyLimit" />
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Monthly Limit</label>
+                                <input type="number" class="form-control" @bind="newCard.MonthlyLimit" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="HideCreateModal">Cancel</button>
+                        <button type="button" class="btn btn-primary" @onclick="CreateCard" disabled="@creating">
+                            @if (creating) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            Create Card
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<VirtualCard>? cards;
+    private List<WalletDto>? wallets;
+    private bool loading = true;
+    private bool creating = false;
+    private bool showCreateModal = false;
+    private CreateCardModel newCard = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        try
+        {
+            cards = await ApiService.GetAsync<List<VirtualCard>>("/api/virtualcard");
+            wallets = await ApiService.GetAsync<List<WalletDto>>("/api/wallet");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading data: {ex.Message}");
+        }
+        loading = false;
+    }
+
+    private void ShowCreateModal()
+    {
+        newCard = new CreateCardModel { CardType = VirtualCardType.Standard, DailyLimit = 1000, MonthlyLimit = 10000 };
+        showCreateModal = true;
+    }
+
+    private void HideCreateModal() => showCreateModal = false;
+
+    private async Task CreateCard()
+    {
+        if (string.IsNullOrEmpty(newCard.WalletId) || string.IsNullOrEmpty(newCard.CardHolderName)) return;
+        creating = true;
+        try
+        {
+            await ApiService.PostAsync<VirtualCard>("/api/virtualcard", new
+            {
+                WalletId = Guid.Parse(newCard.WalletId),
+                CardType = newCard.CardType,
+                CardHolderName = newCard.CardHolderName,
+                DailyLimit = newCard.DailyLimit,
+                MonthlyLimit = newCard.MonthlyLimit
+            });
+            showCreateModal = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating card: {ex.Message}");
+        }
+        creating = false;
+    }
+
+    private async Task FreezeCard(Guid id)
+    {
+        try
+        {
+            await ApiService.PostAsync<VirtualCard>($"/api/virtualcard/{id}/freeze", null);
+            await LoadData();
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task UnfreezeCard(Guid id)
+    {
+        try
+        {
+            await ApiService.PostAsync<VirtualCard>($"/api/virtualcard/{id}/unfreeze", null);
+            await LoadData();
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task ToggleOnline(Guid id)
+    {
+        try
+        {
+            await ApiService.PostAsync<VirtualCard>($"/api/virtualcard/{id}/toggle-online", null);
+            await LoadData();
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task CloseCard(Guid id)
+    {
+        try
+        {
+            await ApiService.PostAsync<VirtualCard>($"/api/virtualcard/{id}/close", null);
+            await LoadData();
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private class CreateCardModel
+    {
+        public string WalletId { get; set; } = "";
+        public string CardHolderName { get; set; } = "";
+        public VirtualCardType CardType { get; set; } = VirtualCardType.Standard;
+        public decimal DailyLimit { get; set; } = 1000;
+        public decimal MonthlyLimit { get; set; } = 10000;
+    }
+}

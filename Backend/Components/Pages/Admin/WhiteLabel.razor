@@ -1,0 +1,107 @@
+@page "/admin/white-label"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>White Label Management - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-building me-2"></i>White Label Management</h2>
+            <p class="text-muted">Manage multi-tenant white-label wallet instances.</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="ShowCreateModal">
+                <i class="bi bi-plus-circle me-1"></i>Create Tenant
+            </button>
+        </div>
+    </div>
+
+    @if (tenants != null && tenants.Any())
+    {
+        <div class="row">
+            @foreach (var tenant in tenants)
+            {
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">@tenant.CompanyName</span>
+                            <span class="badge @(tenant.Status == WhiteLabelStatus.Active ? "bg-success" : tenant.Status == WhiteLabelStatus.Trial ? "bg-info" : "bg-secondary")">@tenant.Status</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-2"><small class="text-muted">Tenant Code:</small> <code>@tenant.TenantCode</code></div>
+                            <div class="mb-2"><small class="text-muted">Contact:</small> @tenant.ContactEmail</div>
+                            <div class="mb-2"><small class="text-muted">Plan:</small> <span class="badge bg-primary">@tenant.Plan</span></div>
+                            <div class="mb-2"><small class="text-muted">Users:</small> @tenant.CurrentUsers / @tenant.MaxUsers</div>
+                            <div class="progress mb-2" style="height: 5px;">
+                                <div class="progress-bar" style="width: @((tenant.CurrentUsers * 100.0 / tenant.MaxUsers))%"></div>
+                            </div>
+                            <div class="mb-2"><small class="text-muted">Fee:</small> @tenant.TransactionFeePercentage%</div>
+                            <div class="mb-2"><small class="text-muted">Created:</small> @tenant.CreatedAt.ToString("MMM dd, yyyy")</div>
+                        </div>
+                        <div class="card-footer">
+                            <div class="btn-group w-100" role="group">
+                                @if (tenant.Status == WhiteLabelStatus.Trial || tenant.Status == WhiteLabelStatus.Suspended)
+                                {
+                                    <button class="btn btn-outline-success btn-sm" @onclick="() => ActivateTenant(tenant.Id)">Activate</button>
+                                }
+                                else if (tenant.Status == WhiteLabelStatus.Active)
+                                {
+                                    <button class="btn btn-outline-warning btn-sm" @onclick="() => SuspendTenant(tenant.Id)">Suspend</button>
+                                }
+                                <button class="btn btn-outline-info btn-sm" @onclick="() => ViewUsers(tenant.Id)">Users</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-building display-1 text-muted"></i>
+                <h4 class="mt-3">No Tenants</h4>
+                <p class="text-muted">Create your first white-label tenant.</p>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<WhiteLabelTenant>? tenants;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
+    }
+
+    private void ShowCreateModal() { }
+
+    private async Task ActivateTenant(Guid id)
+    {
+        try
+        {
+            await ApiService.PostAsync<WhiteLabelTenant>($"/api/whitelabel/tenants/{id}/activate", null);
+            tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task SuspendTenant(Guid id)
+    {
+        try
+        {
+            await ApiService.PostAsync<WhiteLabelTenant>($"/api/whitelabel/tenants/{id}/suspend", null);
+            tenants = await ApiService.GetAsync<List<WhiteLabelTenant>>("/api/whitelabel/tenants");
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private void ViewUsers(Guid id) { }
+}

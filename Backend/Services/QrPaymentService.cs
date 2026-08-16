@@ -88,6 +88,56 @@ public class QrPaymentService
         var qr = await _context.QrCodes.FindAsync(qrCodeId)
             ?? throw new NotFoundException("QR code not found");
 
+        if (qr.FixedAmount.HasValue && qr.FixedAmount.Value != amount)
+            throw new ValidationException($"QR code requires a fixed amount of {qr.FixedAmount.Value}");
+
+        var sourceWallet = sourceWalletId.HasValue
+            ? await _context.Wallets.FirstOrDefaultAsync(w => w.Id == sourceWalletId.Value && w.UserId == payerUserId)
+            : await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == payerUserId && w.IsActive);
+
+        if (sourceWallet == null)
+            throw new NotFoundException("Source wallet not found");
+
+        if (sourceWallet.Balance < amount)
+            throw new ValidationException("Insufficient balance");
+
+        var destinationWallet = qr.WalletId.HasValue
+            ? await _context.Wallets.FindAsync(qr.WalletId.Value)
+            : await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == qr.CreatedById && w.IsActive);
+
+        if (destinationWallet == null)
+            throw new NotFoundException("Destination wallet not found");
+
+        sourceWallet.Balance -= amount;
+        destinationWallet.Balance += amount;
+
+        var debitTx = new Transaction
+        {
+            WalletId = sourceWallet.Id,
+            Type = TransactionType.Payment,
+            Amount = amount,
+            BalanceBefore = sourceWallet.Balance + amount,
+            BalanceAfter = sourceWallet.Balance,
+            Description = $"QR payment to {qr.Description}",
+            ReferenceNumber = $"QR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+            Status = TransactionStatus.Completed
+        };
+
+        var creditTx = new Transaction
+        {
+            WalletId = destinationWallet.Id,
+            Type = TransactionType.Deposit,
+            Amount = amount,
+            BalanceBefore = destinationWallet.Balance - amount,
+            BalanceAfter = destinationWallet.Balance,
+            Description = $"QR payment from user",
+            ReferenceNumber = debitTx.ReferenceNumber,
+            Status = TransactionStatus.Completed
+        };
+
+        _context.Transactions.Add(debitTx);
+        _context.Transactions.Add(creditTx);
+
         qr.UsageCount++;
         if (qr.UsageCount >= qr.UsageLimit)
             qr.Status = QrCodeStatus.Used;

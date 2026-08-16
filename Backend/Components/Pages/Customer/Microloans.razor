@@ -1,0 +1,82 @@
+@page "/customer/microloans"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>Microloans - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-cash me-2"></i>Microloans</h2>
+            <p class="text-muted">Get quick loans based on your wallet activity.</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="ShowApplyModal">
+                <i class="bi bi-plus-circle me-1"></i>Apply for Loan
+            </button>
+        </div>
+    </div>
+
+    @if (loans != null && loans.Any())
+    {
+        <div class="row">
+            @foreach (var loan in loans.Where(l => l.Status == MicroloanStatus.Disbursed || l.Status == MicroloanStatus.Repaying))
+            {
+                <div class="col-md-6 mb-4">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between">
+                            <span>Loan #@loan.Id.ToString()[..8]</span>
+                            <span>@loan.Status</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-6">
+                                    <small class="text-muted">Principal</small>
+                                    <div class="fw-bold">₦@loan.PrincipalAmount.ToString("N2")</div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Outstanding</small>
+                                    <div class="fw-bold text-danger">₦@loan.OutstandingAmount.ToString("N2")</div>
+                                </div>
+                            </div>
+                            <div class="progress mb-3" style="height: 10px;">
+                                <div class="progress-bar bg-success" style="width: @(((loan.TotalRepayable - loan.OutstandingAmount) / loan.TotalRepayable * 100))%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2"><span>Interest Rate:</span><span>@loan.InterestRate%</span></div>
+                            <div class="d-flex justify-content-between mb-2"><span>Due Date:</span><span>@(loan.DueDate?.ToString("MMM dd, yyyy") ?? "N/A")</span></div>
+                            <div class="d-flex justify-content-between"><span>Purpose:</span><span>@loan.Purpose</span></div>
+                        </div>
+                        <div class="card-footer">
+                            <button class="btn btn-primary w-100" @onclick="() => ShowRepayModal(loan)">
+                                Make Payment - ₦@((loan.OutstandingAmount / Math.Max(1, loan.Repayments.Count(r => r.Status == MicroloanRepaymentStatus.Pending)))).ToString("N2")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="card"><div class="card-body text-center py-5"><i class="bi bi-cash display-1 text-muted"></i><h4 class="mt-3">No Active Loans</h4><p>Apply for a quick loan today!</p></div></div>
+    }
+</div>
+
+@code {
+    private List<Microloan>? loans;
+    private bool showApplyModal = false;
+    private bool showRepayModal = false;
+    private Microloan? selectedLoan;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        loans = await ApiService.GetAsync<List<Microloan>>("/api/microloan");
+    }
+
+    private void ShowApplyModal() => showApplyModal = true;
+    private void ShowRepayModal(Microloan loan) { selectedLoan = loan; showRepayModal = true; }
+}

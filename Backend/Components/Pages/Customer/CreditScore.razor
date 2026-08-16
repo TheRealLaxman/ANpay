@@ -1,0 +1,182 @@
+@namespace ANpay.Api.Components.Pages.Customer
+@page "/customer/credit-score"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>Credit Score - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-speedometer me-2"></i>Credit Score</h2>
+            <p class="text-muted">Track your creditworthiness and unlock higher credit limits.</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="RecalculateScore" disabled="@calculating">
+                @if (calculating) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                <i class="bi bi-arrow-clockwise me-1"></i>Recalculate
+            </button>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+        </div>
+    }
+    else if (creditScore != null)
+    {
+        <div class="row">
+            <div class="col-md-4 mb-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5 class="card-title">Your Score</h5>
+                        <div class="display-1 fw-bold @(creditScore.Score >= 700 ? "text-success" : creditScore.Score >= 580 ? "text-warning" : "text-danger")">
+                            @creditScore.Score
+                        </div>
+                        <div class="badge @(GetRatingBadgeClass(creditScore.Rating)) fs-6 mb-3">
+                            @creditScore.Rating
+                        </div>
+                        <div class="progress mb-3" style="height: 10px;">
+                            <div class="progress-bar @GetProgressBarClass(creditScore.Rating)" style="width: @((creditScore.Score / 850.0 * 100))%"></div>
+                        </div>
+                        <small class="text-muted">Last calculated: @creditScore.LastCalculatedAt.ToString("MMM dd, yyyy")</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-cash-stack me-2"></i>Credit Limit</h6>
+                                <div class="fs-4 fw-bold">₦@creditScore.MaximumCreditLimit.ToString("N2")</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-wallet2 me-2"></i>Available Credit</h6>
+                                <div class="fs-4 fw-bold text-success">₦@creditScore.AvailableCredit.ToString("N2")</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-percent me-2"></i>Interest Rate</h6>
+                                <div class="fs-4 fw-bold">@creditScore.InterestRate% p.a.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-graph-up me-2"></i>Total Transactions</h6>
+                                <div class="fs-4 fw-bold">@creditScore.TotalTransactions</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (factors != null && factors.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Score Factors</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Factor</th>
+                                    <th>Weight</th>
+                                    <th>Impact</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var factor in factors.OrderByDescending(f => f.Impact))
+                                {
+                                    <tr>
+                                        <td>@factor.FactorName</td>
+                                        <td>@factor.Weight%</td>
+                                        <td class="@(factor.Impact >= 0 ? "text-success" : "text-danger")">
+                                            @(factor.Impact >= 0 ? "+" : "")@factor.Impact
+                                        </td>
+                                        <td><small class="text-muted">@factor.Description</small></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private ANpay.Api.Models.CreditScore? creditScore;
+    private List<ANpay.Api.Models.CreditScoreFactor>? factors;
+    private bool loading = true;
+    private bool calculating = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        try
+        {
+            creditScore = await ApiService.GetAsync<ANpay.Api.Models.CreditScore>("/api/creditscore");
+            factors = await ApiService.GetAsync<List<ANpay.Api.Models.CreditScoreFactor>>("/api/creditscore/factors");
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        loading = false;
+    }
+
+    private async Task RecalculateScore()
+    {
+        calculating = true;
+        try
+        {
+            creditScore = await ApiService.PostAsync<ANpay.Api.Models.CreditScore>("/api/creditscore/calculate", null);
+            factors = await ApiService.GetAsync<List<ANpay.Api.Models.CreditScoreFactor>>("/api/creditscore/factors");
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        calculating = false;
+    }
+
+    private string GetRatingBadgeClass(ANpay.Api.Models.CreditRating rating) => rating switch
+    {
+        ANpay.Api.Models.CreditRating.Exceptional => "bg-success",
+        ANpay.Api.Models.CreditRating.VeryGood => "bg-info",
+        ANpay.Api.Models.CreditRating.Good => "bg-primary",
+        ANpay.Api.Models.CreditRating.Fair => "bg-warning",
+        ANpay.Api.Models.CreditRating.Poor => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private string GetProgressBarClass(ANpay.Api.Models.CreditRating rating) => rating switch
+    {
+        ANpay.Api.Models.CreditRating.Exceptional => "bg-success",
+        ANpay.Api.Models.CreditRating.VeryGood => "bg-info",
+        ANpay.Api.Models.CreditRating.Good => "bg-primary",
+        ANpay.Api.Models.CreditRating.Fair => "bg-warning",
+        ANpay.Api.Models.CreditRating.Poor => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

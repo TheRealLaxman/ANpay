@@ -50,6 +50,71 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ReconciliationTransaction> ReconciliationTransactions { get; set; }
     public DbSet<ScheduledTransfer> ScheduledTransfers { get; set; }
 
+    // P0: Virtual Cards
+    public DbSet<VirtualCard> VirtualCards { get; set; }
+    public DbSet<VirtualCardTransaction> VirtualCardTransactions { get; set; }
+
+    // P0: Bill Payments
+    public DbSet<BillPayment> BillPayments { get; set; }
+    public DbSet<BillProvider> BillProviders { get; set; }
+
+    // P1: Credit Scoring
+    public DbSet<CreditScore> CreditScores { get; set; }
+    public DbSet<CreditScoreFactor> CreditScoreFactors { get; set; }
+
+    // P1: Cross-Border
+    public DbSet<Remittance> Remittances { get; set; }
+    public DbSet<RemittancePartner> RemittancePartners { get; set; }
+
+    // P1: Loyalty & Rewards
+    public DbSet<LoyaltyPoint> LoyaltyPoints { get; set; }
+    public DbSet<LoyaltyTransaction> LoyaltyTransactions { get; set; }
+    public DbSet<Referral> Referrals { get; set; }
+    public DbSet<Cashback> Cashbacks { get; set; }
+
+    // P2: BNPL
+    public DbSet<BuyNowPayLater> BuyNowPayLaters { get; set; }
+    public DbSet<BnplInstallment> BnplInstallments { get; set; }
+
+    // P2: Open Banking
+    public DbSet<OpenBankingAccount> OpenBankingAccounts { get; set; }
+    public DbSet<ApiKey> ApiKeys { get; set; }
+    public DbSet<Webhook> Webhooks { get; set; }
+    public DbSet<WebhookDelivery> WebhookDeliveries { get; set; }
+
+    // P2: POS
+    public DbSet<PosDevice> PosDevices { get; set; }
+    public DbSet<PosTransaction> PosTransactions { get; set; }
+
+    // P3: White-Label
+    public DbSet<WhiteLabelTenant> WhiteLabelTenants { get; set; }
+    public DbSet<TenantUser> TenantUsers { get; set; }
+
+    // P3: Microloans
+    public DbSet<Microloan> Microloans { get; set; }
+    public DbSet<MicroloanRepayment> MicroloanRepayments { get; set; }
+
+    // P3: Insurance
+    public DbSet<Insurance> Insurances { get; set; }
+    public DbSet<InsuranceClaim> InsuranceClaims { get; set; }
+
+    // P3: Investments
+    public DbSet<Investment> Investments { get; set; }
+    public DbSet<InvestmentTransaction> InvestmentTransactions { get; set; }
+    public DbSet<SavingsGoal> SavingsGoals { get; set; }
+
+    // AI Assistant
+    public DbSet<AiChat> AiChats { get; set; }
+    public DbSet<AiMessage> AiMessages { get; set; }
+    public DbSet<AiTrainingData> AiTrainingData { get; set; }
+
+    // Auth
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
+
+    // WebAuthn
+    public DbSet<WebAuthnCredential> WebAuthnCredentials { get; set; }
+    public DbSet<WebAuthnChallenge> WebAuthnChallenges { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -73,7 +138,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(t => t.Wallet)
                 .WithMany(w => w.Transactions)
                 .HasForeignKey(t => t.WalletId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(t => t.DestinationWallet)
                 .WithMany()
@@ -509,6 +574,477 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(st => st.UserId);
             entity.HasIndex(st => st.NextExecutionDate);
             entity.HasIndex(st => st.Status);
+        });
+
+        // VirtualCard
+        builder.Entity<VirtualCard>(entity =>
+        {
+            entity.HasOne(vc => vc.User)
+                .WithMany()
+                .HasForeignKey(vc => vc.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(vc => vc.Wallet)
+                .WithMany()
+                .HasForeignKey(vc => vc.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(vc => vc.UserId);
+            entity.HasIndex(vc => vc.WalletId);
+            entity.HasIndex(vc => vc.CardNumber);
+            entity.HasIndex(vc => vc.Status);
+        });
+
+        // VirtualCardTransaction
+        builder.Entity<VirtualCardTransaction>(entity =>
+        {
+            entity.HasOne(vct => vct.VirtualCard)
+                .WithMany(vc => vc.Transactions)
+                .HasForeignKey(vct => vct.VirtualCardId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(vct => vct.VirtualCardId);
+            entity.HasIndex(vct => vct.CreatedAt);
+        });
+
+        // BillPayment
+        builder.Entity<BillPayment>(entity =>
+        {
+            entity.HasOne(bp => bp.User)
+                .WithMany()
+                .HasForeignKey(bp => bp.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(bp => bp.Wallet)
+                .WithMany()
+                .HasForeignKey(bp => bp.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(bp => bp.UserId);
+            entity.HasIndex(bp => bp.WalletId);
+            entity.HasIndex(bp => bp.Status);
+            entity.HasIndex(bp => bp.CreatedAt);
+        });
+
+        // BillProvider
+        builder.Entity<BillProvider>(entity =>
+        {
+            entity.HasIndex(bp => bp.Code).IsUnique();
+        });
+
+        // CreditScore
+        builder.Entity<CreditScore>(entity =>
+        {
+            entity.HasOne(cs => cs.User)
+                .WithOne()
+                .HasForeignKey<CreditScore>(cs => cs.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(cs => cs.UserId).IsUnique();
+        });
+
+        // CreditScoreFactor
+        builder.Entity<CreditScoreFactor>(entity =>
+        {
+            entity.HasOne(csf => csf.CreditScore)
+                .WithMany(cs => cs.Factors)
+                .HasForeignKey(csf => csf.CreditScoreId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Remittance
+        builder.Entity<Remittance>(entity =>
+        {
+            entity.HasOne(r => r.SenderUser)
+                .WithMany()
+                .HasForeignKey(r => r.SenderUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.SenderWallet)
+                .WithMany()
+                .HasForeignKey(r => r.SenderWalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => r.SenderUserId);
+            entity.HasIndex(r => r.Status);
+            entity.HasIndex(r => r.CreatedAt);
+        });
+
+        // RemittancePartner
+        builder.Entity<RemittancePartner>(entity =>
+        {
+            entity.HasIndex(rp => rp.Code).IsUnique();
+        });
+
+        // LoyaltyPoint
+        builder.Entity<LoyaltyPoint>(entity =>
+        {
+            entity.HasOne(lp => lp.User)
+                .WithOne()
+                .HasForeignKey<LoyaltyPoint>(lp => lp.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(lp => lp.UserId).IsUnique();
+        });
+
+        // LoyaltyTransaction
+        builder.Entity<LoyaltyTransaction>(entity =>
+        {
+            entity.HasOne(lt => lt.User)
+                .WithMany()
+                .HasForeignKey(lt => lt.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(lt => lt.Transaction)
+                .WithMany()
+                .HasForeignKey(lt => lt.TransactionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(lt => lt.Wallet)
+                .WithMany()
+                .HasForeignKey(lt => lt.WalletId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(lt => lt.UserId);
+            entity.HasIndex(lt => lt.CreatedAt);
+        });
+
+        // Referral
+        builder.Entity<Referral>(entity =>
+        {
+            entity.HasOne(r => r.ReferrerUser)
+                .WithMany()
+                .HasForeignKey(r => r.ReferrerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.ReferredUser)
+                .WithMany()
+                .HasForeignKey(r => r.ReferredUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => r.ReferrerUserId);
+            entity.HasIndex(r => r.ReferredUserId);
+        });
+
+        // Cashback
+        builder.Entity<Cashback>(entity =>
+        {
+            entity.HasOne(cb => cb.User)
+                .WithMany()
+                .HasForeignKey(cb => cb.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(cb => cb.Wallet)
+                .WithMany()
+                .HasForeignKey(cb => cb.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cb => cb.Transaction)
+                .WithMany()
+                .HasForeignKey(cb => cb.TransactionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(cb => cb.UserId);
+            entity.HasIndex(cb => cb.CreatedAt);
+        });
+
+        // BuyNowPayLater
+        builder.Entity<BuyNowPayLater>(entity =>
+        {
+            entity.HasOne(b => b.User)
+                .WithMany()
+                .HasForeignKey(b => b.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(b => b.Wallet)
+                .WithMany()
+                .HasForeignKey(b => b.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(b => b.Merchant)
+                .WithMany()
+                .HasForeignKey(b => b.MerchantId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(b => b.MerchantPayment)
+                .WithMany()
+                .HasForeignKey(b => b.MerchantPaymentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(b => b.UserId);
+            entity.HasIndex(b => b.Status);
+        });
+
+        // BnplInstallment
+        builder.Entity<BnplInstallment>(entity =>
+        {
+            entity.HasOne(bi => bi.BuyNowPayLater)
+                .WithMany(b => b.Installments)
+                .HasForeignKey(bi => bi.BuyNowPayLaterId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(bi => bi.BuyNowPayLaterId);
+        });
+
+        // OpenBankingAccount
+        builder.Entity<OpenBankingAccount>(entity =>
+        {
+            entity.HasOne(ob => ob.User)
+                .WithMany()
+                .HasForeignKey(ob => ob.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(ob => ob.UserId);
+        });
+
+        // ApiKey
+        builder.Entity<ApiKey>(entity =>
+        {
+            entity.HasOne(ak => ak.User)
+                .WithMany()
+                .HasForeignKey(ak => ak.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(ak => ak.Key).IsUnique();
+            entity.HasIndex(ak => ak.UserId);
+        });
+
+        // Webhook
+        builder.Entity<Webhook>(entity =>
+        {
+            entity.HasOne(w => w.User)
+                .WithMany()
+                .HasForeignKey(w => w.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(w => w.UserId);
+        });
+
+        // WebhookDelivery
+        builder.Entity<WebhookDelivery>(entity =>
+        {
+            entity.HasOne(wd => wd.Webhook)
+                .WithMany(w => w.Deliveries)
+                .HasForeignKey(wd => wd.WebhookId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(wd => wd.WebhookId);
+            entity.HasIndex(wd => wd.CreatedAt);
+        });
+
+        // PosDevice
+        builder.Entity<PosDevice>(entity =>
+        {
+            entity.HasOne(pd => pd.Merchant)
+                .WithMany()
+                .HasForeignKey(pd => pd.MerchantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pd => pd.AssignedUser)
+                .WithMany()
+                .HasForeignKey(pd => pd.AssignedUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(pd => pd.DeviceSerial).IsUnique();
+            entity.HasIndex(pd => pd.MerchantId);
+        });
+
+        // PosTransaction
+        builder.Entity<PosTransaction>(entity =>
+        {
+            entity.HasOne(pt => pt.PosDevice)
+                .WithMany(pd => pd.Transactions)
+                .HasForeignKey(pt => pt.PosDeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pt => pt.Wallet)
+                .WithMany()
+                .HasForeignKey(pt => pt.WalletId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(pt => pt.PosDeviceId);
+            entity.HasIndex(pt => pt.CreatedAt);
+        });
+
+        // WhiteLabelTenant
+        builder.Entity<WhiteLabelTenant>(entity =>
+        {
+            entity.HasIndex(wt => wt.TenantCode).IsUnique();
+        });
+
+        // TenantUser
+        builder.Entity<TenantUser>(entity =>
+        {
+            entity.HasOne(tu => tu.Tenant)
+                .WithMany(wt => wt.Users)
+                .HasForeignKey(tu => tu.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(tu => tu.User)
+                .WithMany()
+                .HasForeignKey(tu => tu.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(tu => tu.TenantId);
+            entity.HasIndex(tu => tu.UserId);
+        });
+
+        // Microloan
+        builder.Entity<Microloan>(entity =>
+        {
+            entity.HasOne(ml => ml.User)
+                .WithMany()
+                .HasForeignKey(ml => ml.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(ml => ml.Wallet)
+                .WithMany()
+                .HasForeignKey(ml => ml.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(ml => ml.UserId);
+            entity.HasIndex(ml => ml.Status);
+        });
+
+        // MicroloanRepayment
+        builder.Entity<MicroloanRepayment>(entity =>
+        {
+            entity.HasOne(mlr => mlr.Microloan)
+                .WithMany(ml => ml.Repayments)
+                .HasForeignKey(mlr => mlr.MicroloanId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(mlr => mlr.MicroloanId);
+        });
+
+        // Insurance
+        builder.Entity<Insurance>(entity =>
+        {
+            entity.HasOne(i => i.User)
+                .WithMany()
+                .HasForeignKey(i => i.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(i => i.Wallet)
+                .WithMany()
+                .HasForeignKey(i => i.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(i => i.UserId);
+            entity.HasIndex(i => i.Status);
+        });
+
+        // InsuranceClaim
+        builder.Entity<InsuranceClaim>(entity =>
+        {
+            entity.HasOne(ic => ic.Insurance)
+                .WithMany(i => i.Claims)
+                .HasForeignKey(ic => ic.InsuranceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(ic => ic.InsuranceId);
+        });
+
+        // Investment
+        builder.Entity<Investment>(entity =>
+        {
+            entity.HasOne(i => i.User)
+                .WithMany()
+                .HasForeignKey(i => i.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(i => i.Wallet)
+                .WithMany()
+                .HasForeignKey(i => i.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(i => i.UserId);
+            entity.HasIndex(i => i.Status);
+        });
+
+        // InvestmentTransaction
+        builder.Entity<InvestmentTransaction>(entity =>
+        {
+            entity.HasOne(it => it.Investment)
+                .WithMany(i => i.Transactions)
+                .HasForeignKey(it => it.InvestmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(it => it.InvestmentId);
+            entity.HasIndex(it => it.CreatedAt);
+        });
+
+        // SavingsGoal
+        builder.Entity<SavingsGoal>(entity =>
+        {
+            entity.HasOne(sg => sg.User)
+                .WithMany()
+                .HasForeignKey(sg => sg.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(sg => sg.Wallet)
+                .WithMany()
+                .HasForeignKey(sg => sg.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(sg => sg.UserId);
+            entity.HasIndex(sg => sg.Status);
+        });
+
+        // AiChat
+        builder.Entity<AiChat>(entity =>
+        {
+            entity.HasOne(ac => ac.User)
+                .WithMany()
+                .HasForeignKey(ac => ac.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(ac => ac.UserId);
+        });
+
+        // AiMessage
+        builder.Entity<AiMessage>(entity =>
+        {
+            entity.HasOne(am => am.AiChat)
+                .WithMany(ac => ac.Messages)
+                .HasForeignKey(am => am.AiChatId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(am => am.AiChatId);
+            entity.HasIndex(am => am.CreatedAt);
+        });
+
+        // RefreshToken
+        builder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasOne(rt => rt.User)
+                .WithMany()
+                .HasForeignKey(rt => rt.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(rt => rt.Token).IsUnique();
+            entity.HasIndex(rt => rt.UserId);
+            entity.HasIndex(rt => rt.ExpiresAt);
+            entity.HasIndex(rt => rt.JwtId);
+        });
+
+        // WebAuthnCredential
+        builder.Entity<WebAuthnCredential>(entity =>
+        {
+            entity.HasOne(wc => wc.User)
+                .WithMany()
+                .HasForeignKey(wc => wc.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(wc => wc.UserId);
+            entity.HasIndex(wc => wc.CredentialId).IsUnique();
+        });
+
+        // WebAuthnChallenge
+        builder.Entity<WebAuthnChallenge>(entity =>
+        {
+            entity.HasIndex(wc => wc.Challenge);
+            entity.HasIndex(wc => wc.ExpiresAt);
         });
     }
 }

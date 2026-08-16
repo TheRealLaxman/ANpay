@@ -1,0 +1,216 @@
+@page "/customer/loyalty"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>Loyalty & Rewards - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-star me-2"></i>Loyalty & Rewards</h2>
+            <p class="text-muted">Earn points on every transaction and redeem for exciting rewards!</p>
+        </div>
+    </div>
+
+    @if (loyaltyPoints != null)
+    {
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <i class="bi bi-star-fill display-4"></i>
+                        <h3 class="mt-2">@loyaltyPoints.AvailablePoints</h3>
+                        <p class="mb-0">Available Points</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <i class="bi bi-trophy display-4"></i>
+                        <h3 class="mt-2">@loyaltyPoints.Tier</h3>
+                        <p class="mb-0">Current Tier</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <i class="bi bi-graph-up-arrow display-4"></i>
+                        <h3 class="mt-2">@loyaltyPoints.LifetimePoints</h3>
+                        <p class="mb-0">Lifetime Points</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-dark">
+                    <div class="card-body text-center">
+                        <i class="bi bi-gift display-4"></i>
+                        <h3 class="mt-2">@loyaltyPoints.UsedPoints</h3>
+                        <p class="mb-0">Points Redeemed</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Tier Benefits</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Tier</th>
+                                        <th>Lifetime Points</th>
+                                        <th>Multiplier</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="@(loyaltyPoints.Tier == LoyaltyTier.Bronze ? "table-primary" : "")">
+                                        <td><i class="bi bi-award text-secondary"></i> Bronze</td>
+                                        <td>0</td>
+                                        <td>1x</td>
+                                    </tr>
+                                    <tr class="@(loyaltyPoints.Tier == LoyaltyTier.Silver ? "table-primary" : "")">
+                                        <td><i class="bi bi-award text-secondary"></i> Silver</td>
+                                        <td>5,000</td>
+                                        <td>1.2x</td>
+                                    </tr>
+                                    <tr class="@(loyaltyPoints.Tier == LoyaltyTier.Gold ? "table-primary" : "")">
+                                        <td><i class="bi bi-award text-warning"></i> Gold</td>
+                                        <td>20,000</td>
+                                        <td>1.5x</td>
+                                    </tr>
+                                    <tr class="@(loyaltyPoints.Tier == LoyaltyTier.Platinum ? "table-primary" : "")">
+                                        <td><i class="bi bi-award text-info"></i> Platinum</td>
+                                        <td>50,000</td>
+                                        <td>2x</td>
+                                    </tr>
+                                    <tr class="@(loyaltyPoints.Tier == LoyaltyTier.Diamond ? "table-primary" : "")">
+                                        <td><i class="bi bi-award text-primary"></i> Diamond</td>
+                                        <td>100,000</td>
+                                        <td>3x</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Redeem Points</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Points to Redeem</label>
+                            <input type="number" class="form-control" @bind="redeemPoints" max="@loyaltyPoints.AvailablePoints" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Redeem As</label>
+                            <select class="form-select" @bind="redeemType">
+                                <option value="airtime">Airtime (1 point = ₦1)</option>
+                                <option value="cashback">Cashback to Wallet (1 point = ₦0.8)</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary w-100" @onclick="RedeemPoints" disabled="@(redeemPoints <= 0 || redeemPoints > loyaltyPoints.AvailablePoints)">
+                            Redeem @redeemPoints Points
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (transactions != null && transactions.Any())
+    {
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Transaction History</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Points</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tx in transactions.Take(10))
+                            {
+                                <tr>
+                                    <td>@tx.CreatedAt.ToString("MMM dd, HH:mm")</td>
+                                    <td><span class="badge @GetTypeBadge(tx.Type)">@tx.Type</span></td>
+                                    <td class="@(tx.Points >= 0 ? "text-success" : "text-danger")">
+                                        @(tx.Points >= 0 ? "+" : "")@tx.Points
+                                    </td>
+                                    <td>@tx.Description</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private LoyaltyPoint? loyaltyPoints;
+    private List<LoyaltyTransaction>? transactions;
+    private int redeemPoints = 0;
+    private string redeemType = "airtime";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            loyaltyPoints = await ApiService.GetAsync<LoyaltyPoint>("/api/loyalty");
+            transactions = await ApiService.GetAsync<List<LoyaltyTransaction>>("/api/loyalty/transactions");
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task RedeemPoints()
+    {
+        if (redeemPoints <= 0) return;
+        try
+        {
+            await ApiService.PostAsync<LoyaltyPoint>("/api/loyalty/redeem", new
+            {
+                Points = redeemPoints,
+                Description = $"Redeemed as {redeemType}"
+            });
+            redeemPoints = 0;
+            await LoadData();
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private string GetTypeBadge(LoyaltyTransactionType type) => type switch
+    {
+        LoyaltyTransactionType.Earned => "bg-success",
+        LoyaltyTransactionType.Redeemed => "bg-warning",
+        LoyaltyTransactionType.Bonus => "bg-info",
+        LoyaltyTransactionType.Referral => "bg-primary",
+        _ => "bg-secondary"
+    };
+}

@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -63,7 +64,7 @@ public class AuthService
                 CreatedAt = DateTime.UtcNow
             };
 
-            var adminPassword = _configuration["AdminSettings:InitialPassword"] ?? "Admin@123";
+            var adminPassword = _configuration["AdminSettings:InitialPassword"] ?? "Admin@123456";
             var result = await _userManager.CreateAsync(adminUser, adminPassword);
             if (result.Succeeded)
             {
@@ -78,7 +79,7 @@ public class AuthService
         }
     }
 
-    public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto)
+    public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, string? ipAddress = null)
     {
         _logger.LogInformation("Registration attempt for email: {Email}", dto.Email);
 
@@ -130,12 +131,15 @@ public class AuthService
 
         _logger.LogInformation("User registered successfully: {Email}", dto.Email);
 
-        var token = GenerateJwtToken(user);
+        var jwtToken = GenerateJwtToken(user);
+        var refreshToken = await GenerateRefreshTokenAsync(user.Id, ipAddress);
 
         return new AuthResponseDto
         {
             Success = true,
-            Token = token,
+            Token = jwtToken,
+            RefreshToken = refreshToken.Token,
+            RefreshTokenExpiresAt = refreshToken.ExpiresAt,
             UserId = user.Id,
             Email = user.Email ?? string.Empty,
             Role = user.Role.ToString(),
@@ -175,12 +179,15 @@ public class AuthService
         _logger.LogInformation("User logged in successfully: {Email}", dto.Email);
         await RecordLoginAsync(user.Id, ipAddress, userAgent, true);
 
-        var token = GenerateJwtToken(user);
+        var jwtToken = GenerateJwtToken(user);
+        var refreshToken = await GenerateRefreshTokenAsync(user.Id, ipAddress);
 
         return new AuthResponseDto
         {
             Success = true,
-            Token = token,
+            Token = jwtToken,
+            RefreshToken = refreshToken.Token,
+            RefreshTokenExpiresAt = refreshToken.ExpiresAt,
             UserId = user.Id,
             Email = user.Email ?? string.Empty,
             Role = user.Role.ToString(),
@@ -188,6 +195,99 @@ public class AuthService
             LastName = user.LastName,
             Message = "Login successful"
         };
+    }
+
+    public async Task<AuthResponseDto> RefreshTokenAsync(string refreshTokenValue, string? ipAddress = null)
+    {
+        var refreshToken = await _context.RefreshTokens
+            .FirstOrDefaultAsync(rt => rt.Token == refreshTokenValue);
+
+        if (refreshToken == null)
+        {
+            _logger.LogWarning("Refresh token not found");
+            return new AuthResponseDto { Success = false, Message = "Invalid refresh token" };
+        }
+
+        if (refreshToken.IsExpired)
+        {
+            _logger.LogWarning("Refresh token expired for user {UserId}", refreshToken.UserId);
+            return new AuthResponseDto { Success = false, Message = "Refresh token expired" };
+        }
+
+        if (refreshToken.IsRevoked)
+        {
+            _logger.LogWarning("Refresh token revoked for user {UserId}", refreshToken.UserId);
+            return new AuthResponseDto { Success = false, Message = "Refresh token revoked" };
+        }
+
+        var user = await _userManager.FindByIdAsync(refreshToken.UserId);
+        if (user == null || !user.IsActive)
+        {
+            return new AuthResponseDto { Success = false, Message = "User not found or inactive" };
+        }
+
+        // Revoke the old refresh token
+        refreshToken.RevokedAt = DateTime.UtcNow;
+        refreshToken.ReplacedByToken = "replaced";
+        await _context.SaveChangesAsync();
+
+        // Generate new tokens
+        var newJwtToken = GenerateJwtToken(user);
+        var newRefreshToken = await GenerateRefreshTokenAsync(user.Id, ipAddress);
+
+        _logger.LogInformation("Token refreshed for user {UserId}", user.Id);
+
+        return new AuthResponseDto
+        {
+            Success = true,
+            Token = newJwtToken,
+            RefreshToken = newRefreshToken.Token,
+            RefreshTokenExpiresAt = newRefreshToken.ExpiresAt,
+            UserId = user.Id,
+            Email = user.Email ?? string.Empty,
+            Role = user.Role.ToString(),
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Message = "Token refreshed"
+        };
+    }
+
+    public async Task RevokeRefreshTokenAsync(string refreshTokenValue, string userId)
+    {
+        var refreshToken = await _context.RefreshTokens
+            .FirstOrDefaultAsync(rt => rt.Token == refreshTokenValue && rt.UserId == userId);
+
+        if (refreshToken != null && !refreshToken.IsRevoked)
+        {
+            refreshToken.RevokedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Refresh token revoked for user {UserId}", userId);
+        }
+    }
+
+    private async Task<RefreshToken> GenerateRefreshTokenAsync(string userId, string? ipAddress)
+    {
+        var refreshToken = new RefreshToken
+        {
+            UserId = userId,
+            Token = GenerateRandomToken(),
+            JwtId = Guid.NewGuid().ToString(),
+            ExpiresAt = DateTime.UtcNow.AddDays(Convert.ToDouble(_configuration["JwtSettings:RefreshTokenExpirationInDays"] ?? "7")),
+            CreatedByIp = ipAddress
+        };
+
+        _context.RefreshTokens.Add(refreshToken);
+        await _context.SaveChangesAsync();
+
+        return refreshToken;
+    }
+
+    private static string GenerateRandomToken()
+    {
+        var randomBytes = new byte[64];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(randomBytes);
+        return Convert.ToBase64String(randomBytes);
     }
 
     public async Task<UserProfileDto> GetProfileAsync(string userId)
@@ -257,7 +357,7 @@ public class AuthService
         var user = await _userManager.FindByIdAsync(userId)
             ?? throw new NotFoundException("User not found");
 
-        if (pin.Length != 6 || !pin.All(char.IsDigit))
+        if (string.IsNullOrEmpty(pin) || pin.Length != 6 || !pin.All(char.IsDigit))
             throw new ValidationException("PIN must be exactly 6 digits");
 
         user.TransactionPinHash = _pinHasher.HashPassword(user, pin);

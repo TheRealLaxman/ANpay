@@ -230,7 +230,7 @@ public class WalletService
             if (destWallet == null)
                 throw new NotFoundException("Destination wallet not found");
 
-            if (sourceWallet.Balance < dto.Amount)
+            if (sourceWallet.AvailableBalance < dto.Amount)
                 throw new ValidationException("Insufficient balance");
 
             if (sourceWallet.Currency != destWallet.Currency)

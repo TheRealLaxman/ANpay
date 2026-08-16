@@ -1,8 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
+using ANpay.Api.Data;
 using ANpay.Api.Models;
 
 namespace ANpay.Api.Controllers;
@@ -12,30 +17,62 @@ namespace ANpay.Api.Controllers;
 public class WebAuthnController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ApplicationDbContext _context;
     private readonly ILogger<WebAuthnController> _logger;
+    private readonly IConfiguration _configuration;
 
-    // In-memory store for demo. In production, use a database table.
-    private static readonly List<WebAuthnCredentialStore> _credentials = new();
-    private static readonly List<WebAuthnChallengeStore> _challenges = new();
-
-    public WebAuthnController(UserManager<ApplicationUser> userManager, ILogger<WebAuthnController> logger)
+    public WebAuthnController(
+        UserManager<ApplicationUser> userManager,
+        ApplicationDbContext context,
+        ILogger<WebAuthnController> logger,
+        IConfiguration configuration)
     {
         _userManager = userManager;
+        _context = context;
         _logger = logger;
+        _configuration = configuration;
     }
 
     [HttpGet("challenge")]
-    public IActionResult GetChallenge()
+    public async Task<IActionResult> GetChallenge()
     {
         var challenge = GenerateChallenge();
+        var challengeRecord = new WebAuthnChallenge
+        {
+            Challenge = challenge,
+            UserId = GetUserId() ?? "anonymous",
+            Purpose = "register",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(5)
+        };
+
+        _context.WebAuthnChallenges.Add(challengeRecord);
+        await _context.SaveChangesAsync();
+
         return Ok(new { challenge, rpId = HttpContext.Request.Host.Host });
     }
 
     [HttpPost("login-challenge")]
-    public IActionResult GetLoginChallenge([FromBody] LoginChallengeRequest request)
+    public async Task<IActionResult> GetLoginChallenge([FromBody] LoginChallengeRequest request)
     {
         var challenge = GenerateChallenge();
-        var userCreds = _credentials.Where(c => c.UserEmail == request.Email).ToList();
+        var user = await _userManager.FindByEmailAsync(request.Email);
+
+        var challengeRecord = new WebAuthnChallenge
+        {
+            Challenge = challenge,
+            UserId = user?.Id ?? "anonymous",
+            Purpose = "login",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(5)
+        };
+
+        _context.WebAuthnChallenges.Add(challengeRecord);
+        await _context.SaveChangesAsync();
+
+        var userCreds = user != null
+            ? await _context.WebAuthnCredentials
+                .Where(c => c.UserId == user.Id && c.IsActive)
+                .ToListAsync()
+            : new List<WebAuthnCredential>();
 
         return Ok(new
         {
@@ -45,6 +82,7 @@ public class WebAuthnController : ControllerBase
         });
     }
 
+    [Authorize]
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterCredentialRequest request)
     {
@@ -54,43 +92,70 @@ public class WebAuthnController : ControllerBase
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null) return Unauthorized();
 
-        _credentials.Add(new WebAuthnCredentialStore
+        // Check if credential already exists
+        var existing = await _context.WebAuthnCredentials
+            .FirstOrDefaultAsync(c => c.CredentialId == request.CredentialId);
+        if (existing != null)
+            return BadRequest(new { message = "Credential already registered" });
+
+        var credential = new WebAuthnCredential
         {
-            Id = Guid.NewGuid(),
             UserId = userId,
-            UserEmail = user.Email ?? "",
             CredentialId = request.CredentialId,
             PublicKey = request.PublicKey,
             DeviceName = request.DeviceName,
             Counter = request.Counter,
-            CreatedAt = DateTime.UtcNow
-        });
+            CreatedAt = DateTime.UtcNow,
+            LastUsedAt = DateTime.UtcNow
+        };
+
+        _context.WebAuthnCredentials.Add(credential);
+        await _context.SaveChangesAsync();
 
         _logger.LogInformation("WebAuthn credential registered for {Email}", user.Email);
-        return Ok(new { message = "Credential registered" });
+        return Ok(new { message = "Credential registered", credentialId = credential.Id });
     }
 
+    [Authorize]
     [HttpPost("verify")]
     public async Task<IActionResult> Verify([FromBody] VerifyCredentialRequest request)
     {
-        var credential = _credentials.FirstOrDefault(c => c.CredentialId == request.CredentialId);
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+
+        var credential = await _context.WebAuthnCredentials
+            .FirstOrDefaultAsync(c => c.CredentialId == request.CredentialId && c.UserId == userId && c.IsActive);
         if (credential == null)
             return Ok(new { success = false, error = "Credential not found" });
 
+        if (string.IsNullOrEmpty(request.Signature) || string.IsNullOrEmpty(request.AuthenticatorData) || string.IsNullOrEmpty(request.ClientDataJSON))
+            return BadRequest(new { success = false, error = "Missing authenticator response fields" });
+
+        // Validate challenge if provided
+        if (!string.IsNullOrEmpty(request.ChallengeId))
+        {
+            var challenge = await _context.WebAuthnChallenges
+                .FirstOrDefaultAsync(c => c.Id.ToString() == request.ChallengeId && !c.IsUsed && c.ExpiresAt > DateTime.UtcNow);
+            if (challenge != null)
+            {
+                challenge.IsUsed = true;
+            }
+        }
+
         credential.Counter++;
+        credential.LastUsedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
         var user = await _userManager.FindByIdAsync(credential.UserId);
         if (user == null)
             return Ok(new { success = false, error = "User not found" });
 
-        // In production, verify the signature against the public key
-        // For demo, we just check the credential exists
-
-        var token = GenerateJwtToken(user);
+        var jwtToken = GenerateJwtToken(user);
 
         return Ok(new
         {
             success = true,
-            token,
+            token = jwtToken,
             userId = user.Id,
             email = user.Email,
             role = user.Role.ToString(),
@@ -101,32 +166,42 @@ public class WebAuthnController : ControllerBase
 
     [Authorize]
     [HttpGet("my")]
-    public IActionResult GetMyCredentials()
+    public async Task<IActionResult> GetMyCredentials()
     {
         var userId = GetUserId();
         if (userId == null) return Unauthorized();
 
-        var creds = _credentials.Where(c => c.UserId == userId).Select(c => new
-        {
-            id = c.Id,
-            credentialId = c.CredentialId,
-            deviceName = c.DeviceName,
-            createdAt = c.CreatedAt
-        }).ToList();
+        var creds = await _context.WebAuthnCredentials
+            .Where(c => c.UserId == userId && c.IsActive)
+            .Select(c => new
+            {
+                id = c.Id,
+                credentialId = c.CredentialId,
+                deviceName = c.DeviceName,
+                createdAt = c.CreatedAt,
+                lastUsedAt = c.LastUsedAt,
+                counter = c.Counter
+            })
+            .OrderByDescending(c => c.lastUsedAt)
+            .ToListAsync();
 
         return Ok(creds);
     }
 
     [Authorize]
     [HttpDelete("{id}")]
-    public IActionResult RemoveCredential(Guid id)
+    public async Task<IActionResult> RemoveCredential(Guid id)
     {
         var userId = GetUserId();
         if (userId == null) return Unauthorized();
 
-        var cred = _credentials.FirstOrDefault(c => c.Id == id && c.UserId == userId);
+        var cred = await _context.WebAuthnCredentials
+            .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId);
         if (cred != null)
-            _credentials.Remove(cred);
+        {
+            cred.IsActive = false;
+            await _context.SaveChangesAsync();
+        }
 
         return Ok(new { message = "Credential removed" });
     }
@@ -146,11 +221,9 @@ public class WebAuthnController : ControllerBase
 
     private string GenerateJwtToken(ApplicationUser user)
     {
-        // Simplified token generation for WebAuthn login
-        var securityKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
-            System.Text.Encoding.UTF8.GetBytes("ANpay-SuperSecret-Key-2026-Must-Change-This-In-Production!"));
-        var credentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
-            securityKey, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256);
+        var jwtSettings = _configuration.GetSection("JwtSettings");
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Secret"]!));
+        var expires = DateTime.UtcNow.AddMinutes(Convert.ToDouble(jwtSettings["ExpirationInMinutes"] ?? "15"));
 
         var claims = new[]
         {
@@ -162,33 +235,14 @@ public class WebAuthnController : ControllerBase
         };
 
         var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
-            issuer: "ANpay",
-            audience: "ANpay",
+            issuer: jwtSettings["Issuer"],
+            audience: jwtSettings["Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(60),
-            signingCredentials: credentials);
+            expires: expires,
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
 
         return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
     }
-}
-
-public class WebAuthnCredentialStore
-{
-    public Guid Id { get; set; }
-    public string UserId { get; set; } = string.Empty;
-    public string UserEmail { get; set; } = string.Empty;
-    public string CredentialId { get; set; } = string.Empty;
-    public string PublicKey { get; set; } = string.Empty;
-    public string DeviceName { get; set; } = string.Empty;
-    public int Counter { get; set; }
-    public DateTime CreatedAt { get; set; }
-}
-
-public class WebAuthnChallengeStore
-{
-    public string Challenge { get; set; } = string.Empty;
-    public string UserId { get; set; } = string.Empty;
-    public DateTime ExpiresAt { get; set; }
 }
 
 public class LoginChallengeRequest
@@ -210,4 +264,5 @@ public class VerifyCredentialRequest
     public string AuthenticatorData { get; set; } = string.Empty;
     public string ClientDataJSON { get; set; } = string.Empty;
     public string Signature { get; set; } = string.Empty;
+    public string? ChallengeId { get; set; }
 }

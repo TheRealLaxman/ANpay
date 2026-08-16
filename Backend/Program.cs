@@ -11,6 +11,8 @@ using ANpay.Api.Middleware;
 using ANpay.Api.Models;
 using ANpay.Api.Services;
 using ANpay.Api.Services.PaymentGateway;
+using ANpay.Api.Services.BillPaymentProvider;
+using ANpay.Api.Services.Crypto;
 using ANpay.Api.Hubs;
 using ANpay.Api.Workers;
 using ANpay.Api.Components.Services;
@@ -165,11 +167,66 @@ else
 
 builder.Services.AddScoped<PaymentGatewayService>();
 
+// P0: Virtual Cards
+builder.Services.AddScoped<VirtualCardService>();
+
+// P0: Bill Payments
+builder.Services.AddScoped<BillPaymentService>();
+if (builder.Configuration.GetSection("BillPayment:Baxi").Exists() &&
+    !string.IsNullOrEmpty(builder.Configuration["BillPayment:Baxi:ApiKey"]))
+{
+    builder.Services.AddScoped<IBillPaymentProvider, BaxiBillPaymentProvider>();
+}
+else
+{
+    builder.Services.AddScoped<IBillPaymentProvider, MockBillPaymentProvider>();
+}
+
+// P0: AI Assistant
+builder.Services.AddScoped<AiAssistantService>();
+
+// P1: Credit Scoring
+builder.Services.AddScoped<CreditScoreService>();
+
+// P1: Loyalty & Rewards
+builder.Services.AddScoped<LoyaltyService>();
+
+// P1: Cross-Border Remittance
+builder.Services.AddScoped<RemittanceService>();
+
+// P2: BNPL
+builder.Services.AddScoped<BnplService>();
+
+// P2: Open Banking
+builder.Services.AddScoped<OpenBankingService>();
+
+// P2: POS
+builder.Services.AddScoped<PosService>();
+
+// P3: Microloans
+builder.Services.AddScoped<MicroloanService>();
+
+// P3: Insurance
+builder.Services.AddScoped<InsuranceService>();
+
+// P3: Investments
+builder.Services.AddScoped<InvestmentService>();
+
+// P3: White-Label
+builder.Services.AddScoped<WhiteLabelService>();
+
 // Market Data Service
 builder.Services.AddHttpClient<MarketDataService>();
 
+// Blockchain Services
+builder.Services.AddScoped<BitcoinRpcService>();
+builder.Services.AddScoped<EthereumRpcService>();
+
 // SignalR
 builder.Services.AddSignalR();
+
+// HttpClient factory for webhook delivery and bill payment providers
+builder.Services.AddHttpClient();
 
 // Health Checks
 builder.Services.AddHealthChecks();
@@ -202,6 +259,11 @@ builder.Services.AddControllers();
 
 // Background workers
 builder.Services.AddHostedService<ScheduledTransferWorker>();
+builder.Services.AddHostedService<WebhookDeliveryWorker>();
+builder.Services.AddHostedService<InvestmentAccrualWorker>();
+builder.Services.AddHostedService<MicroloanCollectionWorker>();
+builder.Services.AddHostedService<InsuranceRenewalWorker>();
+builder.Services.AddHostedService<CryptoDepositMonitorWorker>();
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -307,6 +369,42 @@ if (app.Environment.IsDevelopment())
         await settingService.SetAsync("MaintenanceMode", "false", "General", "Enable maintenance mode");
         await settingService.SetAsync("RegistrationEnabled", "true", "General", "Allow new registrations");
         await settingService.SetAsync("DefaultCurrency", "USD", "General", "Default wallet currency");
+
+        // Seed Bill Providers
+        if (!context.BillProviders.Any())
+        {
+            context.BillProviders.AddRange(
+                new BillProvider { Name = "IKEDC", Category = BillCategory.Electricity, Code = "IKEDC", MinimumAmount = 1000, MaximumAmount = 500000, FixedFee = 100, Currency = "NGN", RequiresBillerCode = true, Description = "Ikeja Electric Distribution Company" },
+                new BillProvider { Name = "PHED", Category = BillCategory.Electricity, Code = "PHED", MinimumAmount = 1000, MaximumAmount = 500000, FixedFee = 100, Currency = "NGN", RequiresBillerCode = true, Description = "Port Harcourt Electric Distribution Company" },
+                new BillProvider { Name = "MTN", Category = BillCategory.Airtime, Code = "MTN", MinimumAmount = 50, MaximumAmount = 50000, FixedFee = 0, Currency = "NGN", RequiresBillerCode = false, Description = "MTN Airtime" },
+                new BillProvider { Name = "Airtel", Category = BillCategory.Airtime, Code = "AIRTEL", MinimumAmount = 50, MaximumAmount = 50000, FixedFee = 0, Currency = "NGN", RequiresBillerCode = false, Description = "Airtel Airtime" },
+                new BillProvider { Name = "Glo", Category = BillCategory.Airtime, Code = "GLO", MinimumAmount = 50, MaximumAmount = 50000, FixedFee = 0, Currency = "NGN", RequiresBillerCode = false, Description = "Glo Airtime" },
+                new BillProvider { Name = "9Mobile", Category = BillCategory.Airtime, Code = "9MOBILE", MinimumAmount = 50, MaximumAmount = 50000, FixedFee = 0, Currency = "NGN", RequiresBillerCode = false, Description = "9Mobile Airtime" },
+                new BillProvider { Name = "DStv", Category = BillCategory.CableTV, Code = "DSTV", MinimumAmount = 2000, MaximumAmount = 100000, FixedFee = 100, Currency = "NGN", RequiresBillerCode = true, Description = "DStv Subscription" },
+                new BillProvider { Name = "GOtv", Category = BillCategory.CableTV, Code = "GOTV", MinimumAmount = 1000, MaximumAmount = 50000, FixedFee = 100, Currency = "NGN", RequiresBillerCode = true, Description = "GOtv Subscription" },
+                new BillProvider { Name = "Startimes", Category = BillCategory.CableTV, Code = "STARTIMES", MinimumAmount = 1000, MaximumAmount = 50000, FixedFee = 100, Currency = "NGN", RequiresBillerCode = true, Description = "Startimes Subscription" },
+                new BillProvider { Name = "MTN Data", Category = BillCategory.Data, Code = "MTNDATA", MinimumAmount = 100, MaximumAmount = 50000, FixedFee = 0, Currency = "NGN", RequiresBillerCode = false, Description = "MTN Data Bundle" },
+                new BillProvider { Name = "Airtel Data", Category = BillCategory.Data, Code = "AIRTELDATA", MinimumAmount = 100, MaximumAmount = 50000, FixedFee = 0, Currency = "NGN", RequiresBillerCode = false, Description = "Airtel Data Bundle" }
+            );
+            await context.SaveChangesAsync();
+        }
+
+        // Seed AI Training Data
+        var aiService = scope.ServiceProvider.GetRequiredService<AiAssistantService>();
+        await aiService.SeedTrainingDataAsync();
+
+        // Seed Remittance Partners
+        if (!context.RemittancePartners.Any())
+        {
+            context.RemittancePartners.AddRange(
+                new RemittancePartner { Name = "Wise", Code = "WISE", Country = "United Kingdom", Type = PartnerType.PaymentProvider, CommissionRate = 0.5m, MinimumAmount = 100, MaximumAmount = 100000 },
+                new RemittancePartner { Name = "WorldRemit", Code = "WRLD", Country = "United States", Type = PartnerType.PaymentProvider, CommissionRate = 1.0m, MinimumAmount = 50, MaximumAmount = 50000 },
+                new RemittancePartner { Name = "Remitly", Code = "RMLY", Country = "Canada", Type = PartnerType.PaymentProvider, CommissionRate = 0.8m, MinimumAmount = 50, MaximumAmount = 50000 },
+                new RemittancePartner { Name = "Sendwave", Code = "SNWD", Country = "United Kingdom", Type = PartnerType.MobileMoney, CommissionRate = 0.5m, MinimumAmount = 10, MaximumAmount = 10000 },
+                new RemittancePartner { Name = "Chipper Cash", Code = "CHPR", Country = "United States", Type = PartnerType.MobileMoney, CommissionRate = 0.0m, MinimumAmount = 1, MaximumAmount = 5000 }
+            );
+            await context.SaveChangesAsync();
+        }
     }
 }
 

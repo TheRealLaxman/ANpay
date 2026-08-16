@@ -4,8 +4,10 @@ public interface ISmsService
 {
     Task SendAsync(string phoneNumber, string message);
     Task SendOtpAsync(string phoneNumber, string otp);
-    Task SendTransactionAlertAsync(string phoneNumber, string type, decimal amount, string currency);
+    Task SendTransactionAlertAsync(string phoneNumber, string type, decimal amount, string currency, string reference);
     Task SendLoginAlertAsync(string phoneNumber, string deviceInfo);
+    Task SendLowBalanceAlertAsync(string phoneNumber, decimal balance, string currency);
+    Task SendLoanRepaymentReminderAsync(string phoneNumber, decimal amount, DateTime dueDate);
 }
 
 public class ConsoleSmsService : ISmsService
@@ -29,15 +31,27 @@ public class ConsoleSmsService : ISmsService
         return Task.CompletedTask;
     }
 
-    public Task SendTransactionAlertAsync(string phoneNumber, string type, decimal amount, string currency)
+    public Task SendTransactionAlertAsync(string phoneNumber, string type, decimal amount, string currency, string reference)
     {
-        _logger.LogInformation("[SMS] Transaction to {Phone}: {Type} {Amount} {Currency}", phoneNumber, type, amount, currency);
+        _logger.LogInformation("[SMS] Transaction to {Phone}: {Type} {Amount} {Currency} ref:{Ref}", phoneNumber, type, amount, currency, reference);
         return Task.CompletedTask;
     }
 
     public Task SendLoginAlertAsync(string phoneNumber, string deviceInfo)
     {
         _logger.LogInformation("[SMS] Login alert to {Phone}: {Device}", phoneNumber, deviceInfo);
+        return Task.CompletedTask;
+    }
+
+    public Task SendLowBalanceAlertAsync(string phoneNumber, decimal balance, string currency)
+    {
+        _logger.LogInformation("[SMS] Low balance to {Phone}: {Balance} {Currency}", phoneNumber, balance, currency);
+        return Task.CompletedTask;
+    }
+
+    public Task SendLoanRepaymentReminderAsync(string phoneNumber, decimal amount, DateTime dueDate)
+    {
+        _logger.LogInformation("[SMS] Loan reminder to {Phone}: {Amount} due {Date}", phoneNumber, amount, dueDate);
         return Task.CompletedTask;
     }
 }
@@ -63,8 +77,7 @@ public class TwilioSmsService : ISmsService
 
             if (string.IsNullOrEmpty(accountSid) || string.IsNullOrEmpty(authToken))
             {
-                _logger.LogWarning("Twilio not configured, falling back to console");
-                _logger.LogInformation("[SMS] To: {Phone} | Message: {Message}", phoneNumber, message);
+                _logger.LogWarning("Twilio not configured. SMS to {Phone} was not sent. Configure Twilio:AccountSid and Twilio:AuthToken in appsettings.", phoneNumber);
                 return;
             }
 
@@ -80,7 +93,16 @@ public class TwilioSmsService : ISmsService
             });
 
             var response = await client.PostAsync($"https://api.twilio.com/2010-04-01/Accounts/{accountSid}/Messages.json", content);
-            _logger.LogInformation("SMS sent to {Phone}: {Status}", phoneNumber, response.StatusCode);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("SMS sent to {Phone}: {Status}", phoneNumber, response.StatusCode);
+            }
+            else
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("SMS failed to {Phone}: {Status} - {Error}", phoneNumber, response.StatusCode, errorBody);
+            }
         }
         catch (Exception ex)
         {
@@ -93,13 +115,23 @@ public class TwilioSmsService : ISmsService
         return SendAsync(phoneNumber, $"Your ANpay verification code is: {otp}. Valid for 10 minutes. Do not share this code.");
     }
 
-    public Task SendTransactionAlertAsync(string phoneNumber, string type, decimal amount, string currency)
+    public Task SendTransactionAlertAsync(string phoneNumber, string type, decimal amount, string currency, string reference)
     {
-        return SendAsync(phoneNumber, $"ANpay Alert: {type} of {currency} {amount:N2} processed. Ref: {DateTime.UtcNow:yyyyMMddHHmmss}");
+        return SendAsync(phoneNumber, $"ANpay Alert: {type} of {currency} {amount:N2} processed. Ref: {reference}");
     }
 
     public Task SendLoginAlertAsync(string phoneNumber, string deviceInfo)
     {
         return SendAsync(phoneNumber, $"ANpay Security: New login detected from {deviceInfo}. If this wasn't you, change your password immediately.");
+    }
+
+    public Task SendLowBalanceAlertAsync(string phoneNumber, decimal balance, string currency)
+    {
+        return SendAsync(phoneNumber, $"ANpay Alert: Your wallet balance is low ({currency} {balance:N2}). Top up to continue transacting.");
+    }
+
+    public Task SendLoanRepaymentReminderAsync(string phoneNumber, decimal amount, DateTime dueDate)
+    {
+        return SendAsync(phoneNumber, $"ANpay Loan Reminder: You have a repayment of NGN {amount:N2} due on {dueDate:MMM dd, yyyy}. Ensure sufficient wallet balance.");
     }
 }

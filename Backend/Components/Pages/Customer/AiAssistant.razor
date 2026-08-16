@@ -1,0 +1,211 @@
+@page "/customer/ai-assistant"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>AI Assistant - ANpay</PageTitle>
+
+<div class="container-fluid" style="height: calc(100vh - 100px);">
+    <div class="row h-100">
+        <div class="col-md-3 border-end d-flex flex-column">
+            <div class="p-3 border-bottom">
+                <button class="btn btn-primary w-100" @onclick="CreateNewChat">
+                    <i class="bi bi-plus-circle me-1"></i>New Chat
+                </button>
+            </div>
+            <div class="flex-grow-1 overflow-auto">
+                @if (chats != null)
+                {
+                    @foreach (var chat in chats)
+                    {
+                        <div class="p-3 border-bottom chat-item @(currentChat?.Id == chat.Id ? "bg-light" : "")" style="cursor: pointer;" @onclick="() => LoadChat(chat.Id)">
+                            <div class="d-flex justify-content-between">
+                                <small class="fw-bold text-truncate" style="max-width: 150px;">@chat.SessionTitle</small>
+                                <small class="text-muted">@chat.LastMessageAt.ToString("MMM dd")</small>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <div class="col-md-9 d-flex flex-column">
+            @if (currentChat == null)
+            {
+                <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+                    <div class="text-center">
+                        <i class="bi bi-robot display-1 text-primary"></i>
+                        <h3 class="mt-3">ANpay AI Assistant</h3>
+                        <p class="text-muted">Ask me anything about your wallet, transactions, bills, and more!</p>
+                        <div class="row g-2 justify-content-center mt-3">
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="QuickBalance">
+                                    <i class="bi bi-wallet2 me-1"></i>Check Balance
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="QuickTransactions">
+                                    <i class="bi bi-clock-history me-1"></i>Recent Transactions
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="QuickTransfer">
+                                    <i class="bi bi-arrow-left-right me-1"></i>Transfer Help
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="QuickBill">
+                                    <i class="bi bi-lightning me-1"></i>Pay Bill
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="QuickCard">
+                                    <i class="bi bi-credit-card me-1"></i>Virtual Card
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="QuickInvest">
+                                    <i class="bi bi-graph-up me-1"></i>Investments
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="QuickCredit">
+                                    <i class="bi bi-speedometer me-1"></i>Credit Score
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="flex-grow-1 overflow-auto p-3" @ref="messagesContainer">
+                    @foreach (var msg in messages)
+                    {
+                        <div class="d-flex mb-3 @(msg.Role == AiMessageRole.User ? "justify-content-end" : "justify-content-start")">
+                            <div class="@(msg.Role == AiMessageRole.User ? "bg-primary text-white" : "bg-light") rounded-3 p-3" style="max-width: 70%;">
+                                @if (msg.Role == AiMessageRole.Assistant)
+                                {
+                                    <div class="d-flex align-items-center mb-1">
+                                        <i class="bi bi-robot me-2 text-primary"></i>
+                                        <small class="text-muted fw-bold">ANpay Assistant</small>
+                                    </div>
+                                }
+                                <div style="white-space: pre-wrap;">@msg.Content</div>
+                                <div class="text-end">
+                                    <small class="@(msg.Role == AiMessageRole.User ? "text-white-50" : "text-muted")">@msg.CreatedAt.ToString("HH:mm")</small>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    @if (sending)
+                    {
+                        <div class="d-flex mb-3 justify-content-start">
+                            <div class="bg-light rounded-3 p-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-robot me-2 text-primary"></i>
+                                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                    <span class="ms-2 text-muted">Thinking...</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="border-top p-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" @bind="userMessage" @onkeydown="HandleKeyDown" placeholder="Type your message..." disabled="@sending" />
+                        <button class="btn btn-primary" @onclick="SendMessage" disabled="@sending || string.IsNullOrWhiteSpace(userMessage)">
+                            <i class="bi bi-send"></i>
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AiChat>? chats;
+    private AiChat? currentChat;
+    private List<AiMessage> messages = new();
+    private string userMessage = "";
+    private bool sending = false;
+    private ElementReference messagesContainer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        await LoadChats();
+    }
+
+    private async Task LoadChats()
+    {
+        try { chats = await ApiService.GetAsync<List<AiChat>>("/api/aiassistant/chats"); }
+        catch { }
+    }
+
+    private async Task CreateNewChat()
+    {
+        try
+        {
+            currentChat = await ApiService.PostAsync<AiChat>("/api/aiassistant/chat", new { });
+            messages = new();
+            await LoadChats();
+        }
+        catch { }
+    }
+
+    private async Task LoadChat(Guid chatId)
+    {
+        try
+        {
+            currentChat = await ApiService.GetAsync<AiChat>($"/api/aiassistant/chat/{chatId}");
+            messages = await ApiService.GetAsync<List<AiMessage>>($"/api/aiassistant/chat/{chatId}/messages");
+        }
+        catch { }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(userMessage) || currentChat == null) return;
+        sending = true;
+        var messageText = userMessage;
+        userMessage = "";
+        try
+        {
+            messages.Add(new AiMessage { Role = AiMessageRole.User, Content = messageText, CreatedAt = DateTime.UtcNow });
+            StateHasChanged();
+            var response = await ApiService.PostAsync<AiMessage>($"/api/aiassistant/chat/{currentChat.Id}/message", new { Content = messageText });
+            if (response != null) messages.Add(response);
+        }
+        catch
+        {
+            messages.Add(new AiMessage { Role = AiMessageRole.Assistant, Content = "Sorry, I encountered an error. Please try again.", CreatedAt = DateTime.UtcNow });
+        }
+        sending = false;
+        StateHasChanged();
+    }
+
+    private async Task SendQuickMessage(string message)
+    {
+        if (currentChat == null) await CreateNewChat();
+        userMessage = message;
+        await SendMessage();
+    }
+
+    private Task QuickBalance() => SendQuickMessage("Check my balance");
+    private Task QuickTransactions() => SendQuickMessage("Show recent transactions");
+    private Task QuickTransfer() => SendQuickMessage("How do I transfer money?");
+    private Task QuickBill() => SendQuickMessage("Help me pay a bill");
+    private Task QuickCard() => SendQuickMessage("Create virtual card");
+    private Task QuickInvest() => SendQuickMessage("Investment options");
+    private Task QuickCredit() => SendQuickMessage("Check credit score");
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey) await SendMessage();
+    }
+}

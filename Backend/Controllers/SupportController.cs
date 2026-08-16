@@ -44,12 +44,19 @@ public class SupportController : ControllerBase
     public async Task<IActionResult> GetTicket(Guid id)
     {
         var ticket = await _supportService.GetTicketAsync(id);
+        if (ticket == null) return NotFound();
+        if (ticket.UserId != UserId && !User.IsInRole("SuperAdmin") && !User.IsInRole("BranchAdmin") && !User.IsInRole("MainBranchAdmin"))
+            return Forbid();
         return Ok(ticket);
     }
 
     [HttpPost("tickets/{id}/messages")]
     public async Task<IActionResult> AddMessage(Guid id, [FromBody] AddMessageDto dto)
     {
+        var ticket = await _supportService.GetTicketAsync(id);
+        if (ticket == null) return NotFound();
+        if (ticket.UserId != UserId && !User.IsInRole("SuperAdmin") && !User.IsInRole("BranchAdmin") && !User.IsInRole("MainBranchAdmin"))
+            return Forbid();
         var message = await _supportService.AddMessageAsync(id, UserId, dto.Content, dto.IsInternal);
         return Ok(message);
     }

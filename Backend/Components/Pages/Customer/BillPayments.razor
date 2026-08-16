@@ -1,0 +1,274 @@
+@page "/customer/bill-payments"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>Bill Payments - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-lightning me-2"></i>Bill Payments</h2>
+            <p class="text-muted">Pay your bills conveniently - electricity, airtime, data, cable TV, and more.</p>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "pay" ? "active" : "")" @onclick='() => activeTab = "pay"'>Pay Bill</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "history" ? "active" : "")" @onclick='() => activeTab = "history"'>Payment History</button>
+        </li>
+    </ul>
+
+    @if (activeTab == "pay")
+    {
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Select Category</h5>
+                        <div class="row mb-4">
+                            <div class="col-6 col-md-4 col-lg-3 mb-2">
+                                <button class="btn btn-outline-primary w-100 p-3 @(selectedCategory == BillCategory.Electricity ? "active" : "")"
+                                        @onclick="() => SelectCategory(BillCategory.Electricity)">
+                                    <i class="bi bi-lightning-charge display-6"></i><br />Electricity
+                                </button>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg-3 mb-2">
+                                <button class="btn btn-outline-primary w-100 p-3 @(selectedCategory == BillCategory.Airtime ? "active" : "")"
+                                        @onclick="() => SelectCategory(BillCategory.Airtime)">
+                                    <i class="bi bi-phone display-6"></i><br />Airtime
+                                </button>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg-3 mb-2">
+                                <button class="btn btn-outline-primary w-100 p-3 @(selectedCategory == BillCategory.Data ? "active" : "")"
+                                        @onclick="() => SelectCategory(BillCategory.Data)">
+                                    <i class="bi bi-wifi display-6"></i><br />Data
+                                </button>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg-3 mb-2">
+                                <button class="btn btn-outline-primary w-100 p-3 @(selectedCategory == BillCategory.CableTV ? "active" : "")"
+                                        @onclick="() => SelectCategory(BillCategory.CableTV)">
+                                    <i class="bi bi-tv display-6"></i><br />Cable TV
+                                </button>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg-3 mb-2">
+                                <button class="btn btn-outline-primary w-100 p-3 @(selectedCategory == BillCategory.Internet ? "active" : "")"
+                                        @onclick="() => SelectCategory(BillCategory.Internet)">
+                                    <i class="bi bi-globe display-6"></i><br />Internet
+                                </button>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg-3 mb-2">
+                                <button class="btn btn-outline-primary w-100 p-3 @(selectedCategory == BillCategory.Water ? "active" : "")"
+                                        @onclick="() => SelectCategory(BillCategory.Water)">
+                                    <i class="bi bi-droplet display-6"></i><br />Water
+                                </button>
+                            </div>
+                        </div>
+
+                        @if (selectedCategory.HasValue && providers != null)
+                        {
+                            <hr />
+                            <h5>Select Provider</h5>
+                            <div class="row mb-4">
+                                @foreach (var provider in providers.Where(p => p.Category == selectedCategory))
+                                {
+                                    <div class="col-md-4 mb-2">
+                                        <button class="btn btn-outline-secondary w-100 @(selectedProvider?.Code == provider.Code ? "active" : "")"
+                                                @onclick="() => SelectProvider(provider)">
+                                            @provider.Name
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (selectedProvider != null)
+                        {
+                            <hr />
+                            <h5>Enter Details</h5>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Meter/Account/Phone Number</label>
+                                    <input type="text" class="form-control" @bind="payment.BillerCode" placeholder="Enter number" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Amount</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">@selectedProvider.Currency</span>
+                                        <input type="number" class="form-control" @bind="payment.Amount" min="@selectedProvider.MinimumAmount" max="@selectedProvider.MaximumAmount" />
+                                    </div>
+                                    <small class="text-muted">Min: @selectedProvider.MinimumAmount | Max: @selectedProvider.MaximumAmount | Fee: @selectedProvider.FixedFee</small>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Wallet</label>
+                                    <select class="form-select" @bind="payment.WalletId">
+                                        <option value="">Select Wallet</option>
+                                        @if (wallets != null)
+                                        {
+                                            @foreach (var wallet in wallets)
+                                            {
+                                                <option value="@wallet.Id">@wallet.WalletName (@wallet.Currency @wallet.Balance.ToString("N2"))</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Description (Optional)</label>
+                                    <input type="text" class="form-control" @bind="payment.Description" placeholder="e.g., October electricity" />
+                                </div>
+                            </div>
+
+                            <div class="card bg-light mb-3">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <span>Amount:</span>
+                                        <span>@payment.Amount.ToString("N2")</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between">
+                                        <span>Fee:</span>
+                                        <span>@selectedProvider.FixedFee.ToString("N2")</span>
+                                    </div>
+                                    <hr />
+                                    <div class="d-flex justify-content-between fw-bold">
+                                        <span>Total:</span>
+                                        <span>@((payment.Amount + selectedProvider.FixedFee).ToString("N2"))</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button class="btn btn-primary w-100" @onclick="PayBill" disabled="@paying">
+                                @if (paying) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                Pay Bill
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (activeTab == "history")
+    {
+        @if (paymentHistory != null && paymentHistory.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Provider</th>
+                            <th>Reference</th>
+                            <th>Amount</th>
+                            <th>Fee</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in paymentHistory)
+                        {
+                            <tr>
+                                <td>@p.CreatedAt.ToString("MMM dd, yyyy HH:mm")</td>
+                                <td>@p.Provider</td>
+                                <td><code>@p.BillerCode</code></td>
+                                <td>@p.Amount.ToString("N2")</td>
+                                <td>@p.Fee.ToString("N2")</td>
+                                <td>
+                                    <span class="badge @(p.Status == BillPaymentStatus.Completed ? "bg-success" : p.Status == BillPaymentStatus.Failed ? "bg-danger" : "bg-warning")">
+                                        @p.Status
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-receipt display-1 text-muted"></i>
+                    <h4 class="mt-3">No Payment History</h4>
+                    <p class="text-muted">Your bill payments will appear here.</p>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private string activeTab = "pay";
+    private BillCategory? selectedCategory = null;
+    private BillProvider? selectedProvider = null;
+    private List<BillProvider>? providers;
+    private List<WalletDto>? wallets;
+    private List<BillPayment>? paymentHistory;
+    private bool paying = false;
+    private PayBillModel payment = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            providers = await ApiService.GetAsync<List<BillProvider>>("/api/billpayment/providers");
+            wallets = await ApiService.GetAsync<List<WalletDto>>("/api/wallet");
+            paymentHistory = await ApiService.GetAsync<List<BillPayment>>("/api/billpayment");
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private void SelectCategory(BillCategory category)
+    {
+        selectedCategory = category;
+        selectedProvider = null;
+    }
+
+    private void SelectProvider(BillProvider provider)
+    {
+        selectedProvider = provider;
+        payment = new PayBillModel();
+    }
+
+    private async Task PayBill()
+    {
+        if (selectedProvider == null || string.IsNullOrEmpty(payment.BillerCode) || payment.Amount <= 0 || string.IsNullOrEmpty(payment.WalletId)) return;
+        paying = true;
+        try
+        {
+            await ApiService.PostAsync<BillPayment>("/api/billpayment/pay", new
+            {
+                WalletId = Guid.Parse(payment.WalletId),
+                ProviderCode = selectedProvider.Code,
+                BillerCode = payment.BillerCode,
+                CustomerReference = payment.BillerCode,
+                Amount = payment.Amount,
+                Description = payment.Description
+            });
+            selectedProvider = null;
+            selectedCategory = null;
+            payment = new();
+            await LoadData();
+            activeTab = "history";
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        paying = false;
+    }
+
+    private class PayBillModel
+    {
+        public string WalletId { get; set; } = "";
+        public string BillerCode { get; set; } = "";
+        public decimal Amount { get; set; }
+        public string? Description { get; set; }
+    }
+}

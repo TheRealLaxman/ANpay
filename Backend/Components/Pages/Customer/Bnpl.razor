@@ -1,0 +1,120 @@
+@page "/customer/bnpl"
+@using ANpay.Api.Models
+@using ANpay.Api.Components.Services
+@inject ApiService ApiService
+@inject AuthState AuthState
+@rendermode InteractiveServer
+
+<PageTitle>Buy Now Pay Later - ANpay</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-calendar-check me-2"></i>Buy Now Pay Later</h2>
+            <p class="text-muted">Split your purchases into easy installments.</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" @onclick="ShowCreateModal">
+                <i class="bi bi-plus-circle me-1"></i>New BNPL
+            </button>
+        </div>
+    </div>
+
+    @if (bnpls != null && bnpls.Any())
+    {
+        <div class="row">
+            @foreach (var bnpl in bnpls.Where(b => b.Status == BnplStatus.Active || b.Status == BnplStatus.Pending))
+            {
+                <div class="col-md-6 mb-4">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between">
+                            <span>BNPL #@bnpl.Id.ToString()[..8]</span>
+                            <span class="badge bg-success">@bnpl.Status</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-6">
+                                    <small class="text-muted">Total Amount</small>
+                                    <div class="fw-bold">₦@bnpl.TotalAmount.ToString("N2")</div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Installment</small>
+                                    <div class="fw-bold">₦@bnpl.InstallmentAmount.ToString("N2")</div>
+                                </div>
+                            </div>
+                            <div class="progress mb-3" style="height: 10px;">
+                                <div class="progress-bar bg-success" style="width: @((bnpl.PaidInstallments * 100.0 / bnpl.TotalInstallments))%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between mb-3">
+                                <span>@bnpl.PaidInstallments / @bnpl.TotalInstallments installments paid</span>
+                                <span>@((bnpl.PaidInstallments * 100.0 / bnpl.TotalInstallments).ToString("N1"))%</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span>Next Payment: @(bnpl.NextPaymentDate?.ToString("MMM dd") ?? "N/A")</span>
+                                <span>Frequency: @bnpl.Frequency</span>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <button class="btn btn-primary w-100" @onclick="() => ShowPayModal(bnpl)">
+                                Pay Next Installment - ₦@bnpl.InstallmentAmount.ToString("N2")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (bnpls.Any(b => b.Status == BnplStatus.Completed))
+        {
+            <h4 class="mt-4 mb-3">Completed</h4>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead><tr><th>Date</th><th>Amount</th><th>Installments</th><th>Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var b in bnpls.Where(b => b.Status == BnplStatus.Completed))
+                        {
+                            <tr>
+                                <td>@b.CreatedAt.ToString("MMM dd, yyyy")</td>
+                                <td>₦@b.TotalAmount.ToString("N2")</td>
+                                <td>@b.TotalInstallments</td>
+                                <td><span class="badge bg-success">Completed</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="card"><div class="card-body text-center py-5"><i class="bi bi-calendar-check display-1 text-muted"></i><h4 class="mt-3">No Active BNPL</h4><p>Split your next purchase into easy payments!</p></div></div>
+    }
+</div>
+
+@code {
+    private List<BuyNowPayLater>? bnpls;
+    private bool showCreateModal = false;
+    private bool showPayModal = false;
+    private BuyNowPayLater? selectedBnpl;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthState.IsLoggedIn) return;
+        bnpls = await ApiService.GetAsync<List<BuyNowPayLater>>("/api/bnpl");
+    }
+
+    private void ShowCreateModal() => showCreateModal = true;
+    private void ShowPayModal(BuyNowPayLater bnpl) { selectedBnpl = bnpl; showPayModal = true; }
+
+    private async Task PayInstallment()
+    {
+        if (selectedBnpl == null) return;
+        try
+        {
+            await ApiService.PostAsync<BnplInstallment>($"/api/bnpl/{selectedBnpl.Id}/pay-installment", new { WalletId = selectedBnpl.WalletId });
+            showPayModal = false;
+            bnpls = await ApiService.GetAsync<List<BuyNowPayLater>>("/api/bnpl");
+        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+}
