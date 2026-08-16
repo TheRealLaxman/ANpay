@@ -66,8 +66,8 @@ public class BnplService
         // Deduct down payment if applicable
         if (downPayment > 0)
         {
-            if (wallet.Balance < downPayment)
-                throw new ValidationException("Insufficient balance for down payment");
+            if (wallet.AvailableBalance < downPayment)
+                throw new ValidationException("Insufficient available balance for down payment");
 
             wallet.Balance -= downPayment;
 
@@ -124,8 +124,8 @@ public class BnplService
         if (wallet == null) throw new NotFoundException("Wallet not found");
 
         var amountToPay = nextInstallment.Amount + nextInstallment.PenaltyAmount;
-        if (wallet.Balance < amountToPay)
-            throw new ValidationException("Insufficient balance");
+        if (wallet.AvailableBalance < amountToPay)
+            throw new ValidationException("Insufficient available balance");
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -137,7 +137,7 @@ public class BnplService
             nextInstallment.TransactionReference = $"BNPL-PAY-{Guid.NewGuid().ToString()[..8].ToUpper()}";
 
             bnpl.PaidInstallments++;
-            bnpl.RemainingAmount -= nextInstallment.Amount;
+            bnpl.RemainingAmount -= nextInstallment.Amount + nextInstallment.PenaltyAmount;
 
             if (bnpl.PaidInstallments >= bnpl.TotalInstallments)
             {
@@ -178,7 +178,7 @@ public class BnplService
     {
         var bnpl = await _context.BuyNowPayLaters.FirstOrDefaultAsync(b => b.Id == bnplId && b.UserId == userId);
         if (bnpl == null) throw new NotFoundException("BNPL not found");
-        bnpl.Status = BnplStatus.Cancelled;
+        bnpl.Status = BnplStatus.Paused;
         await _context.SaveChangesAsync();
         return bnpl;
     }

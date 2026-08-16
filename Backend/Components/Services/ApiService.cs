@@ -339,14 +339,14 @@ public class ApiService
     }
 
     // Daily Cash Closing
-    public async Task<BranchDailyClosingDto> GetBranchDailyClosingAsync()
+    public async Task<BranchDailyClosingDto> GetBranchDailyClosingAsync(Guid branchId)
     {
-        return (await _http.GetFromJsonAsync<BranchDailyClosingDto>($"{_baseUrl}/cash/today"))!;
+        return (await _http.GetFromJsonAsync<BranchDailyClosingDto>($"{_baseUrl}/cash/branch/{branchId}/today"))!;
     }
 
-    public async Task SubmitClosingAsync(decimal actualClosing)
+    public async Task SubmitClosingAsync(Guid branchId, decimal actualClosing)
     {
-        await _http.PostAsJsonAsync($"{_baseUrl}/cash/close", new { actualClosing });
+        await _http.PostAsJsonAsync($"{_baseUrl}/cash/branch/{branchId}/close", new { actualClosing });
     }
 
     public async Task<ReconciliationResultDto> ReconcileClosingAsync(Guid closingId)
@@ -355,9 +355,9 @@ public class ApiService
         return (await response.Content.ReadFromJsonAsync<ReconciliationResultDto>())!;
     }
 
-    public async Task<List<ClosingHistoryDto>> GetClosingHistoryAsync()
+    public async Task<List<ClosingHistoryDto>> GetClosingHistoryAsync(Guid branchId)
     {
-        return await _http.GetFromJsonAsync<List<ClosingHistoryDto>>($"{_baseUrl}/cash/history") ?? new();
+        return await _http.GetFromJsonAsync<List<ClosingHistoryDto>>($"{_baseUrl}/cash/branch/{branchId}/history") ?? new();
     }
 
     // QR Codes
@@ -426,36 +426,36 @@ public class ApiService
     // Profile - Devices
     public async Task<List<DeviceDto>> GetDevicesAsync()
     {
-        return await _http.GetFromJsonAsync<List<DeviceDto>>($"{_baseUrl}/profile/devices") ?? new();
+        return await _http.GetFromJsonAsync<List<DeviceDto>>($"{_baseUrl}/auth/devices") ?? new();
     }
 
     public async Task RevokeDeviceAsync(Guid deviceId)
     {
-        await _http.PostAsJsonAsync($"{_baseUrl}/profile/devices/{deviceId}/revoke", new { });
+        await _http.PostAsJsonAsync($"{_baseUrl}/auth/devices/{deviceId}/revoke", new { });
     }
 
     // Profile - Login History
     public async Task<List<LoginHistoryDto>> GetLoginHistoryAsync()
     {
-        return await _http.GetFromJsonAsync<List<LoginHistoryDto>>($"{_baseUrl}/profile/login-history") ?? new();
+        return await _http.GetFromJsonAsync<List<LoginHistoryDto>>($"{_baseUrl}/auth/login-history") ?? new();
     }
 
-    // 2FA
+    // 2FA - These endpoints don't exist yet, marked as TODO
     public async Task<TwoFactorSetupDto> Setup2FAAsync()
     {
-        var result = await _http.PostAsJsonAsync($"{_baseUrl}/profile/2fa/setup", new { });
+        var result = await _http.PostAsJsonAsync($"{_baseUrl}/auth/2fa/setup", new { });
         var content = await result.Content.ReadFromJsonAsync<TwoFactorSetupDto>();
         return content!;
     }
 
     public async Task VerifyAndEnable2FAAsync(string code)
     {
-        await _http.PostAsJsonAsync($"{_baseUrl}/profile/2fa/verify-enable", new { code });
+        await _http.PostAsJsonAsync($"{_baseUrl}/auth/2fa/verify-enable", new { code });
     }
 
     public async Task Disable2FAAsync()
     {
-        await _http.PostAsJsonAsync($"{_baseUrl}/profile/2fa/disable", new { });
+        await _http.PostAsJsonAsync($"{_baseUrl}/auth/2fa/disable", new { });
     }
 
     // Transaction PIN
@@ -466,7 +466,7 @@ public class ApiService
 
     public async Task<bool> VerifyTransactionPinAsync(string pin)
     {
-        var result = await _http.PostAsJsonAsync($"{_baseUrl}/auth/transaction-pin/verify", new { pin });
+        var result = await _http.PostAsJsonAsync($"{_baseUrl}/auth/transaction-pin/verify", new { Pin = pin });
         var content = await result.Content.ReadFromJsonAsync<PinVerifyResult>();
         return content?.Valid ?? false;
     }
@@ -474,8 +474,8 @@ public class ApiService
     // Fee Quote
     public async Task<FeeQuoteResult> GetFeeQuoteAsync(decimal amount, string type, string currency = "NGN")
     {
-        return (await _http.PostAsJsonAsync($"{_baseUrl}/wallet/fee-quote", new { amount, type, currency }))
-            .Content.ReadFromJsonAsync<FeeQuoteResult>().Result!;
+        var response = await _http.PostAsJsonAsync($"{_baseUrl}/wallet/fee-quote", new { amount, type, currency });
+        return (await response.Content.ReadFromJsonAsync<FeeQuoteResult>())!;
     }
 
     // Spending Analytics
@@ -707,6 +707,8 @@ public class AuthResponse
 {
     public bool Success { get; set; }
     public string Token { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public DateTime RefreshTokenExpiresAt { get; set; }
     public string UserId { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;

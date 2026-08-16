@@ -12,7 +12,7 @@ public class MarketDataService
     private static readonly ConcurrentDictionary<string, MarketRate> _cachedRates = new();
     private static readonly ConcurrentDictionary<string, List<RateHistory>> _rateHistory = new();
     private static DateTime _lastFetch = DateTime.MinValue;
-    private static readonly object _fetchLock = new();
+    private static readonly SemaphoreSlim _fetchLock = new(1, 1);
     private const int CacheDurationSeconds = 60;
     private const int HistoryRetentionHours = 24;
 
@@ -53,14 +53,13 @@ public class MarketDataService
         if ((DateTime.UtcNow - _lastFetch).TotalSeconds < CacheDurationSeconds)
             return;
 
-        lock (_fetchLock)
-        {
-            if ((DateTime.UtcNow - _lastFetch).TotalSeconds < CacheDurationSeconds)
-                return;
-        }
-
+        await _fetchLock.WaitAsync();
         try
         {
+            // Double-check after acquiring the lock
+            if ((DateTime.UtcNow - _lastFetch).TotalSeconds < CacheDurationSeconds)
+                return;
+
             _logger.LogInformation("Fetching market rates from {Url}", _ratesUrl);
             var response = await _httpClient.GetAsync(_ratesUrl);
             response.EnsureSuccessStatusCode();
@@ -83,6 +82,10 @@ public class MarketDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch market rates");
+        }
+        finally
+        {
+            _fetchLock.Release();
         }
     }
 

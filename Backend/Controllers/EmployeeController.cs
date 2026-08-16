@@ -30,6 +30,7 @@ public class EmployeeController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var employee = await _employeeService.GetByIdAsync(id);
+        if (employee == null) return NotFound();
         return Ok(employee);
     }
 

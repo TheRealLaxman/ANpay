@@ -66,7 +66,7 @@ public class MicroloanService
             InterestRate = interestRate,
             TenureDays = tenureDays,
             RepaymentFrequencyDays = Math.Max(7, tenureDays / 4),
-            Status = MicroloanStatus.Approved,
+            Status = MicroloanStatus.Applied,
             Purpose = purpose,
             PurposeDescription = purposeDescription,
             CreditScoreAtApplication = creditScore.Score,
@@ -97,15 +97,35 @@ public class MicroloanService
     {
         var loan = await _context.Microloans.FindAsync(loanId);
         if (loan == null) throw new NotFoundException("Loan not found");
-        if (loan.Status != MicroloanStatus.Approved) throw new ValidationException("Loan is not in approved status");
+        if (loan.Status != MicroloanStatus.Applied && loan.Status != MicroloanStatus.UnderReview)
+            throw new ValidationException("Loan is not in a reviewable status");
 
-        loan.Status = MicroloanStatus.Disbursed;
-        loan.DisbursedDate = DateTime.UtcNow;
+        loan.Status = MicroloanStatus.Approved;
 
-        // Disburse to wallet
-        var wallet = await _context.Wallets.FindAsync(loan.WalletId);
-        if (wallet != null)
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Loan {LoanId} approved", loanId);
+        return loan;
+    }
+
+    public async Task<Microloan> DisburseLoanAsync(Guid loanId)
+    {
+        var loan = await _context.Microloans.FindAsync(loanId);
+        if (loan == null) throw new NotFoundException("Loan not found");
+        if (loan.Status != MicroloanStatus.Approved)
+            throw new ValidationException("Loan must be approved before disbursement");
+
+        await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
         {
+            // Disburse to wallet
+            var wallet = await _context.Wallets.FindAsync(loan.WalletId);
+            if (wallet == null)
+                throw new NotFoundException("Wallet not found for loan disbursement");
+
+            loan.Status = MicroloanStatus.Disbursed;
+            loan.DisbursedDate = DateTime.UtcNow;
+
+            var balanceBefore = wallet.Balance;
             wallet.Balance += loan.DisbursedAmount;
 
             var txRecord = new Transaction
@@ -113,23 +133,33 @@ public class MicroloanService
                 WalletId = loan.WalletId,
                 Type = TransactionType.Deposit,
                 Amount = loan.DisbursedAmount,
-                BalanceBefore = wallet.Balance - loan.DisbursedAmount,
+                BalanceBefore = balanceBefore,
                 BalanceAfter = wallet.Balance,
                 Description = $"Microloan disbursement (ID: {loan.Id})",
-                ReferenceNumber = $"LOAN-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[8..].ToUpper()}",
+                ReferenceNumber = $"LOAN-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
                 Status = TransactionStatus.Completed
             };
 
             _context.Transactions.Add(txRecord);
-        }
 
-        await _context.SaveChangesAsync();
-        return loan;
+            await _context.SaveChangesAsync();
+            await dbTransaction.CommitAsync();
+
+            _logger.LogInformation("Loan {LoanId} disbursed", loanId);
+            return loan;
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<MicroloanRepayment> MakeRepaymentAsync(Guid loanId, Guid walletId, string userId)
     {
-        var loan = await _context.Microloans.FirstOrDefaultAsync(ml => ml.Id == loanId && ml.UserId == userId);
+        var loan = await _context.Microloans
+            .Include(ml => ml.Repayments)
+            .FirstOrDefaultAsync(ml => ml.Id == loanId && ml.UserId == userId);
         if (loan == null) throw new NotFoundException("Loan not found");
 
         if (loan.Status != MicroloanStatus.Disbursed && loan.Status != MicroloanStatus.Repaying)
@@ -146,8 +176,8 @@ public class MicroloanService
         if (wallet == null) throw new NotFoundException("Wallet not found");
 
         var amountToPay = pendingRepayment.Amount;
-        if (wallet.Balance < amountToPay)
-            throw new ValidationException("Insufficient balance");
+        if (wallet.AvailableBalance < amountToPay)
+            throw new ValidationException("Insufficient available balance");
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try

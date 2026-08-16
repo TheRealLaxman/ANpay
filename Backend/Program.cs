@@ -127,7 +127,6 @@ builder.Services.AddScoped<CashService>();
 builder.Services.AddScoped<CryptoService>();
 builder.Services.AddScoped<MerchantService>();
 builder.Services.AddScoped<QrPaymentService>();
-builder.Services.AddScoped<CacheService>();
 builder.Services.AddScoped<DisputeService>();
 builder.Services.AddScoped<FraudService>();
 builder.Services.AddScoped<ReconciliationService>();
@@ -137,21 +136,21 @@ builder.Services.AddScoped<SystemSettingService>();
 if (builder.Configuration.GetSection("Smtp").Exists() &&
     !string.IsNullOrEmpty(builder.Configuration["Smtp:Host"]))
 {
-    builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
+    builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 }
 else
 {
-    builder.Services.AddSingleton<IEmailService, ConsoleEmailService>();
+    builder.Services.AddScoped<IEmailService, ConsoleEmailService>();
 }
 
 if (builder.Configuration.GetSection("Twilio").Exists() &&
     !string.IsNullOrEmpty(builder.Configuration["Twilio:AccountSid"]))
 {
-    builder.Services.AddSingleton<ISmsService, TwilioSmsService>();
+    builder.Services.AddScoped<ISmsService, TwilioSmsService>();
 }
 else
 {
-    builder.Services.AddSingleton<ISmsService, ConsoleSmsService>();
+    builder.Services.AddScoped<ISmsService, ConsoleSmsService>();
 }
 
 // Payment Gateway - use mock only in development
@@ -349,7 +348,7 @@ if (app.Environment.IsDevelopment())
     using (var scope = app.Services.CreateScope())
     {
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await context.Database.EnsureCreatedAsync();
+        await context.Database.MigrateAsync();
 
         var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
         await authService.SeedRolesAndAdminAsync();

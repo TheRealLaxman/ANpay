@@ -40,11 +40,14 @@ public class GlobalExceptionMiddleware
         var statusCode = exception switch
         {
             AppException appEx => appEx.StatusCode,
+            System.UnauthorizedAccessException => HttpStatusCode.Unauthorized,
             Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException => HttpStatusCode.Conflict,
             Microsoft.EntityFrameworkCore.DbUpdateException => HttpStatusCode.Conflict,
             OperationCanceledException => HttpStatusCode.RequestTimeout,
+            TimeoutException => HttpStatusCode.RequestTimeout,
             FormatException => HttpStatusCode.BadRequest,
             ArgumentException => HttpStatusCode.BadRequest,
+            InvalidOperationException => HttpStatusCode.InternalServerError,
             _ => HttpStatusCode.InternalServerError
         };
 

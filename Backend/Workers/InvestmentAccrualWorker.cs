@@ -117,38 +117,47 @@ public class InvestmentAccrualWorker : BackgroundService
                 var wallet = await context.Wallets.FindAsync(investment.WalletId);
                 if (wallet != null)
                 {
-                    var payoutAmount = investment.CurrentValue + investment.InterestEarned;
-                    wallet.Balance += payoutAmount;
-
-                    context.Transactions.Add(new Transaction
+                    await using var transaction = await context.Database.BeginTransactionAsync(ct);
+                    try
                     {
-                        WalletId = investment.WalletId,
-                        Type = TransactionType.Deposit,
-                        Amount = payoutAmount,
-                        BalanceBefore = wallet.Balance - payoutAmount,
-                        BalanceAfter = wallet.Balance,
-                        Description = $"Investment maturity payout - {investment.ProductName}",
-                        ReferenceNumber = $"INV-MAT-{Guid.NewGuid().ToString()[..8].ToUpper()}",
-                        Status = TransactionStatus.Completed
-                    });
+                        var balanceBefore = wallet.Balance;
+                        // CurrentValue already includes PrincipalAmount + InterestEarned
+                        var payoutAmount = investment.CurrentValue;
+                        wallet.Balance += payoutAmount;
 
-                    context.InvestmentTransactions.Add(new InvestmentTransaction
+                        context.Transactions.Add(new Transaction
+                        {
+                            WalletId = investment.WalletId,
+                            Type = TransactionType.Deposit,
+                            Amount = payoutAmount,
+                            BalanceBefore = balanceBefore,
+                            BalanceAfter = wallet.Balance,
+                            Description = $"Investment maturity payout - {investment.ProductName}",
+                            ReferenceNumber = $"INV-MAT-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                            Status = TransactionStatus.Completed
+                        });
+
+                        context.InvestmentTransactions.Add(new InvestmentTransaction
+                        {
+                            InvestmentId = investment.Id,
+                            Type = InvestmentTransactionType.Withdrawal,
+                            Amount = payoutAmount,
+                            Description = "Maturity payout",
+                            ReferenceNumber = $"INV-MAT-{Guid.NewGuid().ToString()[..8].ToUpper()}"
+                        });
+
+                        await context.SaveChangesAsync(ct);
+                        await transaction.CommitAsync(ct);
+
+                        _logger.LogInformation("Investment {Id} matured. Payout: {Amount}", investment.Id, payoutAmount);
+                    }
+                    catch
                     {
-                        InvestmentId = investment.Id,
-                        Type = InvestmentTransactionType.Withdrawal,
-                        Amount = payoutAmount,
-                        Description = "Maturity payout",
-                        ReferenceNumber = $"INV-MAT-{Guid.NewGuid().ToString()[..8].ToUpper()}"
-                    });
-
-                    _logger.LogInformation("Investment {Id} matured. Payout: {Amount}", investment.Id, payoutAmount);
+                        await transaction.RollbackAsync(ct);
+                        throw;
+                    }
                 }
             }
-        }
-
-        if (maturedInvestments.Any())
-        {
-            await context.SaveChangesAsync(ct);
         }
     }
 

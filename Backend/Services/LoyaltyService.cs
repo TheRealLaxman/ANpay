@@ -171,27 +171,37 @@ public class LoyaltyService
 
     public async Task<Referral> ProcessReferralAsync(string referrerUserId, string referredUserId)
     {
-        var referral = new Referral
+        await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            ReferrerUserId = referrerUserId,
-            ReferredUserId = referredUserId,
-            Status = ReferralStatus.Completed,
-            ReferrerRewardPoints = 1000,
-            ReferredRewardPoints = 500,
-            ReferrerCashReward = 500,
-            CompletedAt = DateTime.UtcNow
-        };
+            var referral = new Referral
+            {
+                ReferrerUserId = referrerUserId,
+                ReferredUserId = referredUserId,
+                Status = ReferralStatus.Completed,
+                ReferrerRewardPoints = 1000,
+                ReferredRewardPoints = 500,
+                ReferrerCashReward = 500,
+                CompletedAt = DateTime.UtcNow
+            };
 
-        _context.Referrals.Add(referral);
+            _context.Referrals.Add(referral);
+            await _context.SaveChangesAsync();
 
-        // Award points to referrer
-        await EarnPointsAsync(referrerUserId, 1000, LoyaltyTransactionType.Referral, "Referral bonus for inviting a friend");
+            // Award points to referrer
+            await EarnPointsAsync(referrerUserId, 1000, LoyaltyTransactionType.Referral, "Referral bonus for inviting a friend");
 
-        // Award points to referred user
-        await EarnPointsAsync(referredUserId, 500, LoyaltyTransactionType.Bonus, "Welcome bonus for joining via referral");
+            // Award points to referred user
+            await EarnPointsAsync(referredUserId, 500, LoyaltyTransactionType.Bonus, "Welcome bonus for joining via referral");
 
-        await _context.SaveChangesAsync();
-        return referral;
+            await dbTransaction.CommitAsync();
+            return referral;
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<List<Referral>> GetUserReferralsAsync(string userId)

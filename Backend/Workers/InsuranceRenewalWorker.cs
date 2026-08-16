@@ -41,7 +41,7 @@ public class InsuranceRenewalWorker : BackgroundService
             var now = DateTime.UtcNow;
             var nextRun = now.Date.AddDays(1).AddHours(2);
             var delay = nextRun - now;
-            if (delay.TotalMilliseconds <= 0) delay = TimeSpan.FromHours(24);
+            if (delay.TotalMilliseconds <= 0) delay = TimeSpan.Zero;
             await Task.Delay(delay, stoppingToken);
         }
 
@@ -103,8 +103,10 @@ public class InsuranceRenewalWorker : BackgroundService
 
     private async Task ExpireOverduePoliciesAsync(ApplicationDbContext context, CancellationToken ct)
     {
+        // Apply 15-day grace period before expiring policies
+        var gracePeriodDeadline = DateTime.UtcNow.AddDays(-15);
         var expiredPolicies = await context.Insurances
-            .Where(i => i.Status == InsuranceStatus.Active && i.EndDate < DateTime.UtcNow)
+            .Where(i => i.Status == InsuranceStatus.Active && i.EndDate < gracePeriodDeadline)
             .ToListAsync(ct);
 
         foreach (var policy in expiredPolicies)

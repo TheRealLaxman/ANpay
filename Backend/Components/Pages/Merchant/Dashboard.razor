@@ -158,9 +158,9 @@
         error = string.Empty;
         try
         {
-            merchant = await Api.GetAsync<Merchant>("api/merchant/me");
-            payments = await Api.GetAsync<List<MerchantPayment>>("api/merchant/payments") ?? new();
-            settlements = await Api.GetAsync<List<MerchantSettlement>>("api/merchant/settlements") ?? new();
+            merchant = await Api.GetAsync<Merchant>("/api/merchant/me");
+            payments = await Api.GetAsync<List<MerchantPayment>>("/api/merchant/payments") ?? new();
+            settlements = await Api.GetAsync<List<MerchantSettlement>>("/api/merchant/settlements") ?? new();
             totalPayments = payments.Count;
             totalRevenue = payments.Where(p => p.Status == MerchantPaymentStatus.Completed).Sum(p => p.NetAmount);
             pendingSettlement = settlements.Where(s => s.Status == SettlementStatus.Pending).Sum(s => s.NetAmount);

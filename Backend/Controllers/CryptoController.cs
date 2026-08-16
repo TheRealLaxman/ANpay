@@ -11,11 +11,13 @@ namespace ANpay.Api.Controllers;
 public class CryptoController : ControllerBase
 {
     private readonly CryptoService _cryptoService;
-    private string UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+    private readonly AuthService _authService;
+    private string? UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
-    public CryptoController(CryptoService cryptoService)
+    public CryptoController(CryptoService cryptoService, AuthService authService)
     {
         _cryptoService = cryptoService;
+        _authService = authService;
     }
 
     [HttpGet("wallets")]
@@ -42,6 +44,13 @@ public class CryptoController : ControllerBase
     [HttpPost("withdraw")]
     public async Task<IActionResult> Withdraw([FromBody] CryptoWithdrawDto dto)
     {
+        if (UserId == null) return Unauthorized();
+        if (string.IsNullOrEmpty(dto.TransactionPin))
+            return BadRequest(new { message = "Transaction PIN is required" });
+
+        var pinValid = await _authService.VerifyTransactionPinAsync(UserId, dto.TransactionPin);
+        if (!pinValid) return Unauthorized(new { message = "Invalid transaction PIN" });
+
         var tx = await _cryptoService.WithdrawAsync(UserId, dto.WalletId, dto.Amount, dto.ToAddress);
         return Ok(tx);
     }
@@ -88,4 +97,5 @@ public class CryptoWithdrawDto
     public Guid WalletId { get; set; }
     public decimal Amount { get; set; }
     public string ToAddress { get; set; } = string.Empty;
+    public string? TransactionPin { get; set; }
 }

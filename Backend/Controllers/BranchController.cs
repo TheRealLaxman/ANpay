@@ -11,7 +11,7 @@ namespace ANpay.Api.Controllers;
 public class BranchController : ControllerBase
 {
     private readonly BranchService _branchService;
-    private string UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+    private string? UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
     public BranchController(BranchService branchService)
     {
@@ -37,6 +37,7 @@ public class BranchController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var branch = await _branchService.GetByIdAsync(id);
+        if (branch == null) return NotFound();
         return Ok(branch);
     }
 

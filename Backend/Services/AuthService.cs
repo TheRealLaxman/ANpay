@@ -40,7 +40,7 @@ public class AuthService
 
     public async Task SeedRolesAndAdminAsync()
     {
-        string[] roles = { "Customer", "Official", "BranchAdmin", "SuperAdmin" };
+        string[] roles = { "Customer", "Official", "BranchAdmin", "MainBranchAdmin", "SuperAdmin" };
 
         foreach (var role in roles)
         {
@@ -64,7 +64,8 @@ public class AuthService
                 CreatedAt = DateTime.UtcNow
             };
 
-            var adminPassword = _configuration["AdminSettings:InitialPassword"] ?? "Admin@123456";
+            var adminPassword = _configuration["AdminSettings:InitialPassword"]
+                ?? throw new InvalidOperationException("AdminSettings:InitialPassword must be configured for admin seeding");
             var result = await _userManager.CreateAsync(adminUser, adminPassword);
             if (result.Succeeded)
             {
@@ -119,15 +120,26 @@ public class AuthService
 
         await _userManager.AddToRoleAsync(user, "Customer");
 
-        var wallet = new Wallet
+        await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            UserId = user.Id,
-            WalletName = "Main Wallet",
-            Currency = "USD",
-            Balance = 0
-        };
-        _context.Wallets.Add(wallet);
-        await _context.SaveChangesAsync();
+            var wallet = new Wallet
+            {
+                UserId = user.Id,
+                WalletName = "Main Wallet",
+                Currency = "USD",
+                Balance = 0
+            };
+            _context.Wallets.Add(wallet);
+            await _context.SaveChangesAsync();
+            await dbTransaction.CommitAsync();
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            await _userManager.DeleteAsync(user);
+            throw;
+        }
 
         _logger.LogInformation("User registered successfully: {Email}", dto.Email);
 
@@ -161,6 +173,16 @@ public class AuthService
             {
                 Success = false,
                 Message = "Invalid email or password"
+            };
+        }
+
+        if (!user.IsActive)
+        {
+            _logger.LogWarning("Login failed - account deactivated: {Email}", dto.Email);
+            return new AuthResponseDto
+            {
+                Success = false,
+                Message = "Account has been deactivated. Please contact support."
             };
         }
 
@@ -360,9 +382,17 @@ public class AuthService
         if (string.IsNullOrEmpty(pin) || pin.Length != 6 || !pin.All(char.IsDigit))
             throw new ValidationException("PIN must be exactly 6 digits");
 
+        // Reject weak PINs
+        var weakPins = new[] { "000000", "111111", "222222", "333333", "444444", "555555", "666666", "777777", "888888", "999999", "123456", "654321" };
+        if (weakPins.Contains(pin))
+            throw new ValidationException("PIN is too weak. Please choose a different PIN.");
+
         user.TransactionPinHash = _pinHasher.HashPassword(user, pin);
         user.IsTransactionPinSet = true;
-        await _userManager.UpdateAsync(user);
+        var result = await _userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+            throw new ValidationException(string.Join(", ", result.Errors.Select(e => e.Description)));
+
         _logger.LogInformation("Transaction PIN set for user {UserId}", userId);
     }
 
@@ -375,6 +405,11 @@ public class AuthService
             throw new ValidationException("Transaction PIN not set. Please set a PIN first.");
 
         return _pinHasher.VerifyHashedPassword(user, user.TransactionPinHash, pin) == PasswordVerificationResult.Success;
+    }
+
+    public string GetAppUrl()
+    {
+        return _configuration["AppUrl"] ?? "http://localhost:5069";
     }
 
     public async Task<string> GeneratePasswordResetTokenAsync(string email)
@@ -401,7 +436,9 @@ public class AuthService
     private string GenerateJwtToken(ApplicationUser user)
     {
         var jwtSettings = _configuration.GetSection("JwtSettings");
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Secret"]!));
+        var secret = jwtSettings["Secret"]
+            ?? throw new InvalidOperationException("JwtSettings:Secret must be configured");
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var expires = DateTime.UtcNow.AddMinutes(Convert.ToDouble(jwtSettings["ExpirationInMinutes"] ?? "15"));
 
         var claims = new List<Claim>

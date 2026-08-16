@@ -32,32 +32,43 @@ public class EthereumRpcService : IBlockchainService
     {
         try
         {
-            using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            // secp256k1 is the elliptic curve used by Ethereum
+            var secp256k1Oid = "1.3.132.0.10";
+            ECCurve curve;
+            try
+            {
+                curve = ECCurve.CreateFromValue(secp256k1Oid);
+            }
+            catch (PlatformNotSupportedException)
+            {
+                _logger.LogWarning("secp256k1 not supported on this platform; wallet addresses may not be Ethereum-compatible");
+                throw new PlatformNotSupportedException("Ethereum wallet generation requires secp256k1 support (available on Windows CNG and OpenSSL-backed systems)");
+            }
+
+            using var ecdsa = ECDsa.Create(curve);
             var privateKey = ecdsa.ExportECPrivateKey();
 
-            // Derive public key
-            var publicKey = ecdsa.ExportSubjectPublicKeyInfo();
+            // Derive uncompressed public key (64 bytes, no prefix byte)
+            var subjectPublicKeyInfo = ecdsa.ExportSubjectPublicKeyInfo();
+            // SubjectPublicKeyInfo for secp256k1 has a ~12-byte header; raw 64-byte key follows
             var publicKeyBytes = new byte[64];
-            var span = publicKey.AsSpan();
-            // Skip the first 65 bytes (algorithm info) for uncompressed public key
-            if (publicKey.Length > 65)
+            if (subjectPublicKeyInfo.Length >= 76)
             {
-                publicKey[65..].CopyTo(publicKeyBytes);
+                Array.Copy(subjectPublicKeyInfo, subjectPublicKeyInfo.Length - 64, publicKeyBytes, 0, 64);
             }
-            else
+            else if (subjectPublicKeyInfo.Length >= 64)
             {
-                publicKey.CopyTo(publicKeyBytes);
+                Array.Copy(subjectPublicKeyInfo, subjectPublicKeyInfo.Length - 64, publicKeyBytes, 0, 64);
             }
 
-            // Hash the public key (keccak256 for Ethereum)
+            // Hash the uncompressed public key with Keccak-256 for Ethereum address
             var hash = Keccak256(publicKeyBytes);
-            var addressBytes = hash[^20..]; // Last 20 bytes
             var address = "0x" + Convert.ToHexString(hash[^20..]).ToLower();
 
             return new BlockchainWalletInfo
             {
                 Address = address,
-                PublicKey = Convert.ToHexString(publicKey),
+                PublicKey = Convert.ToHexString(subjectPublicKeyInfo),
                 PrivateKey = Convert.ToHexString(privateKey),
                 Network = "Ethereum"
             };
@@ -266,7 +277,11 @@ public class EthereumRpcService : IBlockchainService
 
             // Note: In production, you'd sign the transaction with the private key
             // This is a simplified version using personal_sendTransaction (requires unlocked account on node)
-            var amountHex = "0x" + ((long)(amount * 1_000_000_000_000_000_000m)).ToString("x");
+            var weiAmount = (BigInteger)(amount * 1_000_000_000_000_000_000m);
+            var amountHex = "0x" + weiAmount.ToString("x");
+
+            var weiFee = (BigInteger)(fee * 1_000_000_000m);
+            var feeHex = "0x" + weiFee.ToString("x");
 
             var response = await SendEthRpcRequestAsync(client, "eth_sendTransaction", new object[]
             {
@@ -276,7 +291,7 @@ public class EthereumRpcService : IBlockchainService
                     to = toAddress,
                     value = amountHex,
                     gas = "0x5208", // 21000 gas
-                    gasPrice = "0x" + ((long)(fee * 1_000_000_000m)).ToString("x")
+                    gasPrice = feeHex
                 }
             });
 
@@ -303,12 +318,13 @@ public class EthereumRpcService : IBlockchainService
         return tx?.Confirmations ?? 0;
     }
 
-    public async Task<bool> ValidateAddressAsync(string address)
+    public Task<bool> ValidateAddressAsync(string address)
     {
-        return !string.IsNullOrEmpty(address) &&
+        var isValid = !string.IsNullOrEmpty(address) &&
                address.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
                address.Length == 42 &&
                System.Text.RegularExpressions.Regex.IsMatch(address, @"^0x[0-9a-fA-F]{40}$");
+        return Task.FromResult(isValid);
     }
 
     private HttpClient CreateRpcClient()
@@ -335,8 +351,95 @@ public class EthereumRpcService : IBlockchainService
 
     private static byte[] Keccak256(byte[] data)
     {
-        // Simplified Keccak256 - in production use SHA3.Net or similar
-        // This uses SHA256 as a placeholder; for real Ethereum, use proper Keccak256
-        return SHA256.HashData(data);
+        // Keccak-256 used by Ethereum (NOT SHA3-256 which has different padding)
+        const int keccakRounds = 24;
+        const int keccakStateSize = 25;
+
+        ulong[] state = new ulong[keccakStateSize];
+
+        // Keccak block size is 200 bytes (1600 bits)
+        int blockSize = 200;
+        // Rate is 1088 bits (136 bytes) for Keccak-256
+        int rate = 136;
+
+        // Pad input: append 0x01 byte, then 0x80 byte at end of block
+        int inputLen = data.Length;
+        int fullBlocks = inputLen / rate;
+        int paddedLen = (fullBlocks + 1) * blockSize;
+        var padded = new byte[paddedLen];
+        Array.Copy(data, padded, inputLen);
+        padded[inputLen] = 0x01;
+        padded[paddedLen - 1] |= 0x80;
+
+        // Process each 200-byte block
+        for (int offset = 0; offset < paddedLen; offset += blockSize)
+        {
+            // XOR block into state (only first `rate` bytes map to state lanes)
+            for (int i = 0; i < rate / 8; i++)
+            {
+                state[i] ^= BitConverter.ToUInt64(padded, offset + i * 8);
+            }
+
+            // Keccak-f[1600] permutation
+            for (int round = 0; round < keccakRounds; round++)
+            {
+                // Theta
+                ulong[] C = new ulong[5];
+                for (int x = 0; x < 5; x++)
+                    C[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
+
+                for (int x = 0; x < 5; x++)
+                {
+                    ulong D = C[(x + 4) % 5] ^ BitRotateLeft(C[(x + 1) % 5], 1);
+                    for (int y = 0; y < 25; y += 5)
+                        state[y + x] ^= D;
+                }
+
+                // Rho and Pi — standard Keccak rotation offsets
+                int[] rhoOffsets = { 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44 };
+                int[] piMap = { 10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1 };
+
+                var tempState = new ulong[25];
+                for (int i = 0; i < 25; i++)
+                {
+                    tempState[piMap[i]] = BitRotateLeft(state[i], rhoOffsets[i]);
+                }
+                Array.Copy(tempState, state, 25);
+
+                // Chi
+                for (int y = 0; y < 25; y += 5)
+                {
+                    ulong[] row = new ulong[5];
+                    for (int x = 0; x < 5; x++)
+                        row[x] = state[y + x];
+
+                    for (int x = 0; x < 5; x++)
+                        state[y + x] = row[x] ^ (~row[(x + 1) % 5] & row[(x + 2) % 5]);
+                }
+
+                // Iota
+                ulong[] RC = { 0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
+                    0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
+                    0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
+                    0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
+                    0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
+                    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008 };
+                state[0] ^= RC[round];
+            }
+        }
+
+        // Extract first 32 bytes (256 bits) of the state
+        var result = new byte[32];
+        for (int i = 0; i < 4; i++)
+        {
+            var bytes = BitConverter.GetBytes(state[i]);
+            Array.Copy(bytes, 0, result, i * 8, 8);
+        }
+        return result;
+    }
+
+    private static ulong BitRotateLeft(ulong value, int offset)
+    {
+        return (value << offset) | (value >> (64 - offset));
     }
 }

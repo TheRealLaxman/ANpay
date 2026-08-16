@@ -11,11 +11,13 @@ public class QrPaymentService
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<QrPaymentService> _logger;
+    private readonly IConfiguration _configuration;
 
-    public QrPaymentService(ApplicationDbContext context, ILogger<QrPaymentService> logger)
+    public QrPaymentService(ApplicationDbContext context, ILogger<QrPaymentService> logger, IConfiguration configuration)
     {
         _context = context;
         _logger = logger;
+        _configuration = configuration;
     }
 
     public async Task<QrCode> GenerateQrCodeAsync(string userId, QrCodeType type, decimal? fixedAmount = null,
@@ -98,8 +100,8 @@ public class QrPaymentService
         if (sourceWallet == null)
             throw new NotFoundException("Source wallet not found");
 
-        if (sourceWallet.Balance < amount)
-            throw new ValidationException("Insufficient balance");
+        if (sourceWallet.AvailableBalance < amount)
+            throw new ValidationException("Insufficient available balance");
 
         var destinationWallet = qr.WalletId.HasValue
             ? await _context.Wallets.FindAsync(qr.WalletId.Value)
@@ -108,42 +110,55 @@ public class QrPaymentService
         if (destinationWallet == null)
             throw new NotFoundException("Destination wallet not found");
 
-        sourceWallet.Balance -= amount;
-        destinationWallet.Balance += amount;
-
-        var debitTx = new Transaction
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            WalletId = sourceWallet.Id,
-            Type = TransactionType.Payment,
-            Amount = amount,
-            BalanceBefore = sourceWallet.Balance + amount,
-            BalanceAfter = sourceWallet.Balance,
-            Description = $"QR payment to {qr.Description}",
-            ReferenceNumber = $"QR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
-            Status = TransactionStatus.Completed
-        };
+            var sourceBalanceBefore = sourceWallet.Balance;
+            var destBalanceBefore = destinationWallet.Balance;
 
-        var creditTx = new Transaction
+            sourceWallet.Balance -= amount;
+            destinationWallet.Balance += amount;
+
+            var debitTx = new Transaction
+            {
+                WalletId = sourceWallet.Id,
+                Type = TransactionType.Payment,
+                Amount = amount,
+                BalanceBefore = sourceBalanceBefore,
+                BalanceAfter = sourceWallet.Balance,
+                Description = $"QR payment to {qr.Description}",
+                ReferenceNumber = $"QR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                Status = TransactionStatus.Completed
+            };
+
+            var creditTx = new Transaction
+            {
+                WalletId = destinationWallet.Id,
+                Type = TransactionType.Deposit,
+                Amount = amount,
+                BalanceBefore = destBalanceBefore,
+                BalanceAfter = destinationWallet.Balance,
+                Description = $"QR payment from user",
+                ReferenceNumber = debitTx.ReferenceNumber,
+                Status = TransactionStatus.Completed
+            };
+
+            _context.Transactions.Add(debitTx);
+            _context.Transactions.Add(creditTx);
+
+            qr.UsageCount++;
+            if (qr.UsageCount >= qr.UsageLimit)
+                qr.Status = QrCodeStatus.Used;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            _logger.LogInformation("QR payment processed: {QrCodeId} by {UserId} amount {Amount}", qrCodeId, payerUserId, amount);
+        }
+        catch
         {
-            WalletId = destinationWallet.Id,
-            Type = TransactionType.Deposit,
-            Amount = amount,
-            BalanceBefore = destinationWallet.Balance - amount,
-            BalanceAfter = destinationWallet.Balance,
-            Description = $"QR payment from user",
-            ReferenceNumber = debitTx.ReferenceNumber,
-            Status = TransactionStatus.Completed
-        };
-
-        _context.Transactions.Add(debitTx);
-        _context.Transactions.Add(creditTx);
-
-        qr.UsageCount++;
-        if (qr.UsageCount >= qr.UsageLimit)
-            qr.Status = QrCodeStatus.Used;
-
-        await _context.SaveChangesAsync();
-        _logger.LogInformation("QR payment processed: {QrCodeId} by {UserId} amount {Amount}", qrCodeId, payerUserId, amount);
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<List<QrCode>> GetUserQrCodesAsync(string userId)
@@ -195,7 +210,12 @@ public class QrPaymentService
 
     private string CreatePayload(QrCodeType type, string userId, decimal? amount, Guid? walletId, Guid? merchantId)
     {
-        return $"{type}:{userId}:{amount}:{walletId}:{merchantId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var payload = $"{type}:{userId}:{amount}:{walletId}:{merchantId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var secret = _configuration["QrPayment:HmacSecret"] ?? _configuration["JwtSettings:Secret"] ?? "";
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        var signature = Convert.ToBase64String(hash)[..16];
+        return $"{payload}:{signature}";
     }
 }
 

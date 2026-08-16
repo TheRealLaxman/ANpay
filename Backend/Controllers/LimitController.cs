@@ -11,7 +11,7 @@ namespace ANpay.Api.Controllers;
 public class LimitController : ControllerBase
 {
     private readonly LimitService _limitService;
-    private string UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+    private string? UserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
     public LimitController(LimitService limitService)
     {
@@ -28,8 +28,15 @@ public class LimitController : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "SuperAdmin")]
-    public async Task<IActionResult> Create([FromBody] TransactionLimit limit)
+    public async Task<IActionResult> Create([FromBody] CreateTransactionLimitDto dto)
     {
+        var limit = new TransactionLimit
+        {
+            LimitType = dto.LimitType,
+            LimitAmount = dto.LimitAmount,
+            Currency = dto.Currency,
+            RoleName = dto.RoleName
+        };
         var created = await _limitService.CreateAsync(limit);
         return Ok(created);
     }
@@ -56,4 +63,12 @@ public class LimitController : ControllerBase
 public class UpdateLimitDto
 {
     public decimal LimitAmount { get; set; }
+}
+
+public class CreateTransactionLimitDto
+{
+    public TransactionLimitType LimitType { get; set; }
+    public decimal LimitAmount { get; set; }
+    public string Currency { get; set; } = "NGN";
+    public string RoleName { get; set; } = "Customer";
 }

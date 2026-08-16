@@ -38,6 +38,7 @@ public class TransferDto
     public decimal Amount { get; set; }
 
     public string Description { get; set; } = string.Empty;
+    public string? TransactionPin { get; set; }
 }
 
 public class DepositDto
@@ -50,6 +51,7 @@ public class DepositDto
     public decimal Amount { get; set; }
 
     public string Description { get; set; } = string.Empty;
+    public string? TransactionPin { get; set; }
 }
 
 public class WithdrawDto
@@ -62,4 +64,5 @@ public class WithdrawDto
     public decimal Amount { get; set; }
 
     public string Description { get; set; } = string.Empty;
+    public string? TransactionPin { get; set; }
 }

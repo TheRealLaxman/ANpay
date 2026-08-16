@@ -53,7 +53,10 @@ public class DisputeController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetDispute(Guid id)
     {
-        var dispute = await _disputeService.GetDisputeByIdAsync(id);
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var isAdmin = User.IsInRole("SuperAdmin") || User.IsInRole("MainBranchAdmin") || User.IsInRole("BranchAdmin");
+
+        var dispute = await _disputeService.GetDisputeByIdAsync(id, isAdmin ? null : userId);
         if (dispute == null) return NotFound();
         return Ok(dispute);
     }

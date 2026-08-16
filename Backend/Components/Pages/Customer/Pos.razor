@@ -77,19 +77,31 @@
 @code {
     private List<PosDevice>? devices;
     private List<PosTransaction>? transactions;
+    private bool loading = true;
+    private string error = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
         if (!AuthState.IsLoggedIn) return;
+        try
+        {
+            await AuthState.InitializeAsync();
+            ApiService.SetToken(AuthState.Token);
+            devices = await ApiService.GetAsync<List<PosDevice>>("/api/pos/devices/me");
+            transactions = await ApiService.GetAsync<List<PosTransaction>>("/api/pos/transactions/me");
+        }
+        catch (Exception ex) { error = $"Failed to load POS data: {ex.Message}"; }
+        finally { loading = false; }
     }
 
     private async Task ActivateDevice(Guid id)
     {
         try
         {
-            await ApiService.PostAsync<PosDevice>($"/api/pos/devices/{id}/activate?merchantId=00000000-0000-0000-0000-000000000000", null);
+            await ApiService.PostAsync<PosDevice>($"/api/pos/devices/{id}/activate", null);
+            devices = await ApiService.GetAsync<List<PosDevice>>("/api/pos/devices/me");
         }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        catch (Exception ex) { error = $"Failed to activate device: {ex.Message}"; }
     }
 
     private void ShowSaleModal(PosDevice device) { }

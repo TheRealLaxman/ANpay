@@ -113,9 +113,8 @@ public class CreditScoreService
         });
 
         // Factor 6: Loan repayment history (if applicable)
-        var loans = await _context.Microloans.Where(ml => ml.UserId == userId).ToListAsync();
-        var completedLoans = loans.Count(l => l.Status == MicroloanStatus.Completed);
-        var defaultedLoans = loans.Count(l => l.Status == MicroloanStatus.Defaulted);
+        var completedLoans = await _context.Microloans.CountAsync(ml => ml.UserId == userId && ml.Status == MicroloanStatus.Completed);
+        var defaultedLoans = await _context.Microloans.CountAsync(ml => ml.UserId == userId && ml.Status == MicroloanStatus.Defaulted);
         var loanScore = (completedLoans * 20) - (defaultedLoans * 50);
         baseScore += loanScore;
         factors.Add(new CreditScoreFactor

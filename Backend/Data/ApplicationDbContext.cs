@@ -150,6 +150,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(t => t.ReferenceNumber);
             entity.HasIndex(t => t.Channel);
             entity.HasIndex(t => t.BranchId);
+            entity.HasIndex(t => new { t.WalletId, t.Status });
         });
 
         // Beneficiary
@@ -166,6 +167,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(b => b.UserId);
+            entity.HasIndex(b => b.WalletId);
         });
 
         // RolePermission
@@ -195,6 +197,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Branch>(entity =>
         {
             entity.HasIndex(b => b.Name).IsUnique();
+            entity.HasIndex(b => b.Status);
         });
 
         // KycProfile
@@ -289,6 +292,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(ar => ar.Status);
             entity.HasIndex(ar => ar.RequestedById);
+            entity.HasIndex(ar => new { ar.Status, ar.CreatedAt });
         });
 
         // Notification
@@ -378,6 +382,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(ct => ct.CryptoWalletId);
             entity.HasIndex(ct => ct.TxHash);
             entity.HasIndex(ct => ct.CreatedAt);
+            entity.HasIndex(ct => new { ct.Type, ct.Status });
         });
 
         // Merchant
@@ -454,6 +459,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(d => d.UserId);
             entity.HasIndex(d => d.Status);
             entity.HasIndex(d => d.CreatedAt);
+            entity.HasIndex(d => d.AssignedToId);
         });
 
         // DisputeMessage
@@ -486,6 +492,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(fa => fa.UserId);
             entity.HasIndex(fa => fa.Status);
             entity.HasIndex(fa => fa.CreatedAt);
+            entity.HasIndex(fa => fa.AssignedToId);
         });
 
         // RiskScore
@@ -668,6 +675,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(r => r.SenderUserId);
             entity.HasIndex(r => r.Status);
             entity.HasIndex(r => r.CreatedAt);
+            entity.HasIndex(r => new { r.Status, r.CreatedAt });
         });
 
         // RemittancePartner
@@ -830,6 +838,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(wd => wd.WebhookId);
             entity.HasIndex(wd => wd.CreatedAt);
+            entity.HasIndex(wd => wd.Status);
         });
 
         // PosDevice
@@ -904,6 +913,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(ml => ml.UserId);
             entity.HasIndex(ml => ml.Status);
+            entity.HasIndex(ml => new { ml.Status, ml.DueDate });
         });
 
         // MicroloanRepayment
@@ -915,6 +925,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(mlr => mlr.MicroloanId);
+            entity.HasIndex(mlr => new { mlr.Status, mlr.DueDate });
         });
 
         // Insurance
@@ -932,6 +943,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(i => i.UserId);
             entity.HasIndex(i => i.Status);
+            entity.HasIndex(i => new { i.Status, i.NextPaymentDate });
+            entity.HasIndex(i => new { i.Status, i.EndDate });
         });
 
         // InsuranceClaim
@@ -960,6 +973,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(i => i.UserId);
             entity.HasIndex(i => i.Status);
+            entity.HasIndex(i => new { i.Status, i.MaturityDate });
         });
 
         // InvestmentTransaction

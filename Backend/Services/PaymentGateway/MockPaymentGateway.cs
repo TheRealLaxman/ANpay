@@ -5,7 +5,6 @@ namespace ANpay.Api.Services.PaymentGateway;
 public class MockPaymentGateway : IPaymentGateway
 {
     private readonly ILogger<MockPaymentGateway> _logger;
-    private readonly Random _random = new();
 
     public MockPaymentGateway(ILogger<MockPaymentGateway> logger)
     {
@@ -16,10 +15,10 @@ public class MockPaymentGateway : IPaymentGateway
     {
         _logger.LogInformation("MockGateway: Processing payment of {Amount} {Currency}", request.Amount, request.Currency);
 
-        var delay = _random.Next(1000, 2500);
+        var delay = Random.Shared.Next(1000, 2500);
         await Task.Delay(delay);
 
-        var success = request.Amount < 1000 || _random.Next(100) < 90;
+        var success = request.Amount < 1000 || Random.Shared.Next(100) < 90;
 
         var reference = $"MOCK-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..12].ToUpper()}";
 

@@ -23,8 +23,8 @@ public class InsuranceService
         var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.Id == walletId && w.UserId == userId);
         if (wallet == null) throw new NotFoundException("Wallet not found");
 
-        if (wallet.Balance < premiumAmount)
-            throw new ValidationException("Insufficient balance for premium payment");
+        if (wallet.AvailableBalance < premiumAmount)
+            throw new ValidationException("Insufficient available balance for premium payment");
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try

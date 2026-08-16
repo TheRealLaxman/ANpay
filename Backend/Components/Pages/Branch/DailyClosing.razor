@@ -163,6 +163,7 @@
     private bool isError = false;
     private string error = string.Empty;
     private decimal actualClosingInput;
+    private Guid branchId = Guid.Empty;
 
     private bool _shouldRedirect = false;
 
@@ -176,6 +177,15 @@
         }
         isInitialized = true;
         Api.SetToken(Auth.Token);
+
+        // Get branch ID from profile
+        var profile = await Api.GetAsync<dynamic>("/api/profile");
+        var branchIdStr = (string?)profile?.BranchId;
+        if (!string.IsNullOrEmpty(branchIdStr) && Guid.TryParse(branchIdStr, out var parsedBranchId))
+        {
+            branchId = parsedBranchId;
+        }
+
         await LoadData();
     }
 
@@ -193,9 +203,9 @@
         error = string.Empty;
         try
         {
-            todayData = await Api.GetBranchDailyClosingAsync();
+            todayData = await Api.GetBranchDailyClosingAsync(branchId);
             actualClosingInput = todayData.ExpectedClosing;
-            history = await Api.GetClosingHistoryAsync();
+            history = await Api.GetClosingHistoryAsync(branchId);
         }
         catch (Exception ex)
         {
@@ -216,7 +226,7 @@
         message = string.Empty;
         try
         {
-            await Api.SubmitClosingAsync(actualClosingInput);
+            await Api.SubmitClosingAsync(branchId, actualClosingInput);
             ShowMessage("Closing balance recorded successfully.", false);
             await LoadData();
         }

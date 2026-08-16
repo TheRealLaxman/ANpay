@@ -70,7 +70,7 @@ public class TransactionController : ControllerBase
         if (from.HasValue) query = query.Where(t => t.CreatedAt >= from.Value);
         if (to.HasValue) query = query.Where(t => t.CreatedAt <= to.Value);
 
-        var transactions = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
+        var transactions = await query.OrderByDescending(t => t.CreatedAt).Take(10000).ToListAsync();
 
         var sb = new StringBuilder();
         sb.AppendLine("Date,Type,Description,Amount,Fee,Status,Reference");
@@ -144,6 +144,8 @@ public class TransactionController : ControllerBase
 
     private static string EscapeCsv(string value)
     {
+        if (string.IsNullOrEmpty(value))
+            return value ?? "";
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
             return $"\"{value.Replace("\"", "\"\"")}\"";
         return value;

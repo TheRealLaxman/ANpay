@@ -185,15 +185,33 @@ public class ScheduledTransferService
 
     private static DateTime CalculateNextExecution(RecurrenceType type, DateTime from, int dayOfMonth)
     {
-        return type switch
+        switch (type)
         {
-            RecurrenceType.Weekly => from.AddDays(7),
-            RecurrenceType.Biweekly => from.AddDays(14),
-            RecurrenceType.Monthly => new DateTime(from.Year, from.Month, 1).AddMonths(1).AddDays(Math.Min(dayOfMonth, DateTime.DaysInMonth(from.Year, from.Month + 1)) - 1),
-            RecurrenceType.Quarterly => new DateTime(from.Year, from.Month, 1).AddMonths(3).AddDays(Math.Min(dayOfMonth, DateTime.DaysInMonth(from.Year, from.Month + 3)) - 1),
-            RecurrenceType.Yearly => new DateTime(from.Year + 1, 1, 1).AddDays(Math.Min(dayOfMonth - 1, 30)),
-            _ => from.AddMonths(1)
-        };
+            case RecurrenceType.Weekly:
+                return from.AddDays(7);
+            case RecurrenceType.Biweekly:
+                return from.AddDays(14);
+            case RecurrenceType.Monthly:
+            {
+                var nextMonth = from.AddMonths(1);
+                var maxDay = DateTime.DaysInMonth(nextMonth.Year, nextMonth.Month);
+                return new DateTime(nextMonth.Year, nextMonth.Month, Math.Min(dayOfMonth, maxDay));
+            }
+            case RecurrenceType.Quarterly:
+            {
+                var nextQuarter = from.AddMonths(3);
+                var maxDay = DateTime.DaysInMonth(nextQuarter.Year, nextQuarter.Month);
+                return new DateTime(nextQuarter.Year, nextQuarter.Month, Math.Min(dayOfMonth, maxDay));
+            }
+            case RecurrenceType.Yearly:
+            {
+                var nextYear = from.AddYears(1);
+                var maxDay = DateTime.DaysInMonth(nextYear.Year, nextYear.Month);
+                return new DateTime(nextYear.Year, nextYear.Month, Math.Min(dayOfMonth, maxDay));
+            }
+            default:
+                return from.AddMonths(1);
+        }
     }
 }
 
